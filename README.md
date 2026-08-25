@@ -4,20 +4,21 @@ A simple, reliable, 100% offline and privacy-first audiobook player for Android.
 
 ## Features
 
-1. **Folder Selection & Modern Storage (SAF)**
+1. **Folder Selection & Recursive Sub-Folder Scanning**
    - Tap "Choose Audiobook Folder" on first launch to pick any folder containing your audiobooks.
+   - Automatically scans sub-folders (up to 3 levels deep) and aggregates all audio tracks into a clean, unified library.
    - You can easily switch to a different folder at any time using the folder icon at the top of the Library.
    - Supports popular audiobook formats: MP3, M4A, M4B, AAC, FLAC, OGG, WAV, WMA, and OPUS.
 
 2. **Clean Book Library**
-   - Automatically cleans up file names for nice, readable book titles.
-   - Shows total duration and your listening progress percentage on each book.
-   - Features a search/filter bar to find audiobooks in your folder instantly.
+   - Automatically formats file names into clean, readable book titles.
+   - Displays duration and listening progress percentage on every track.
+   - Instant search and filtering bar to quickly locate books across directories.
 
 3. **Dedicated Player Screen**
-   - **Big Play / Pause** button in the center.
-   - **Interactive Seek Bar** with current position and total duration.
-   - **4 Large Skip Buttons**:
+   - **Prominent Center Play / Pause** button.
+   - **Interactive Seek Bar** with elapsed time and total duration.
+   - **4 Skip Controls**:
      - Rewind 1 minute (`-1m`)
      - Rewind 15 seconds (`-15s`)
      - Fast forward 15 seconds (`+15s`)
@@ -35,13 +36,25 @@ A simple, reliable, 100% offline and privacy-first audiobook player for Android.
    - Seamlessly resumes right where you left off when you open a book again.
    - Stored 100% privately on your device using Android SharedPreferences.
 
-6. **Background Playback & Lock Screen Controls**
-   - Keeps playing seamlessly when your screen is locked or when using other apps.
-   - Notification with Play/Pause, Rewind, and Forward controls.
+6. **Background Playback & 5-Button Notification Controls**
+   - Keeps playing seamlessly in the background when your screen is locked or when using other apps.
+   - Media style notification with **5 quick playback actions**:
+     - Rewind 1 minute (`-1m`)
+     - Rewind 15 seconds (`-15s`)
+     - Play / Pause toggle
+     - Fast forward 15 seconds (`+15s`)
+     - Fast forward 1 minute (`+1m`)
 
-7. **100% Private & Offline**
+7. **100% Private & Pure Offline**
    - Zero internet permissions in the Android Manifest.
    - No tracking, no analytics, no accounts, and no cloud dependencies.
+   - Light, dark, and system-adaptive Material Design 3 themes.
+
+---
+
+## Codebase Cleanup Note
+
+In this release, all unused template dependencies (including Firebase, Google Services plugin, OkHttp, Retrofit, Room, and Moshi) were removed from `app/build.gradle.kts`. The app relies exclusively on standard AndroidX libraries (`androidx.media`, `androidx.documentfile`, Jetpack Compose, Coroutines, and ViewModel) to ensure minimal APK size, fast builds, and guaranteed offline privacy.
 
 ---
 
@@ -57,7 +70,7 @@ A simple, reliable, 100% offline and privacy-first audiobook player for Android.
    - Click the green **Run (▶)** button in the top toolbar of Android Studio.
 
 3. **Using the App**:
-   - Copy some audiobooks or audio files (`.mp3`, `.m4a`, `.aac`, etc.) into a folder on your phone (e.g., `Download` or `Audiobooks`).
+   - Copy your audiobook files (`.mp3`, `.m4a`, `.aac`, etc.) into a folder on your phone (e.g., `Download` or `Audiobooks`), organized directly or inside sub-folders.
    - Open the app and tap **Choose Audiobook Folder**.
    - Select your folder and tap **"Use this folder"** (and grant permission).
    - Tap any book in your library to start listening!
