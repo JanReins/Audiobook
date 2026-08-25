@@ -1,11 +1,63 @@
-<div align="center">
+# My Private Audiobook Player
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+A simple, reliable, 100% offline and privacy-first audiobook player for Android.
 
-  <h1>Built with AI Studio</h2>
+## Features
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+1. **Folder Selection & Modern Storage (SAF)**
+   - Tap "Choose Audiobook Folder" on first launch to pick any folder containing your audiobooks.
+   - You can easily switch to a different folder at any time using the folder icon at the top of the Library.
+   - Supports popular audiobook formats: MP3, M4A, M4B, AAC, FLAC, OGG, WAV, WMA, and OPUS.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+2. **Clean Book Library**
+   - Automatically cleans up file names for nice, readable book titles.
+   - Shows total duration and your listening progress percentage on each book.
+   - Features a search/filter bar to find audiobooks in your folder instantly.
 
-</div>
+3. **Dedicated Player Screen**
+   - **Big Play / Pause** button in the center.
+   - **Interactive Seek Bar** with current position and total duration.
+   - **4 Large Skip Buttons**:
+     - Rewind 1 minute (`-1m`)
+     - Rewind 15 seconds (`-15s`)
+     - Fast forward 15 seconds (`+15s`)
+     - Fast forward 1 minute (`+1m`)
+   - **Playback Speed Selector**: 0.75x, 1.0x, 1.25x, and 1.5x speeds.
+   - **Sleep Timer**: Choose 15, 30, 45, or 60 minutes. Shows a live countdown badge and automatically pauses audio when time is up.
+
+4. **Bookmarks**
+   - Save your exact position at any moment with a custom or auto-generated note.
+   - Open the bookmarks list to see all saved timestamps for the current book.
+   - Tap any bookmark to jump straight to that moment, or delete bookmarks you no longer need.
+
+5. **Progress Memory**
+   - Automatically remembers your listening position for every book.
+   - Seamlessly resumes right where you left off when you open a book again.
+   - Stored 100% privately on your device using Android SharedPreferences.
+
+6. **Background Playback & Lock Screen Controls**
+   - Keeps playing seamlessly when your screen is locked or when using other apps.
+   - Notification with Play/Pause, Rewind, and Forward controls.
+
+7. **100% Private & Offline**
+   - Zero internet permissions in the Android Manifest.
+   - No tracking, no analytics, no accounts, and no cloud dependencies.
+
+---
+
+## How to Open and Run (for Beginners)
+
+1. **Open in Android Studio**:
+   - Launch **Android Studio** (Giraffe, Hedgehog, Iguana, Jellyfish, Ladybug or newer).
+   - Click **Open** and select this project's root folder.
+   - Allow Gradle to finish syncing (this usually takes 1–2 minutes on first load).
+
+2. **Run on a Phone or Emulator**:
+   - Connect your Android phone with USB debugging enabled, or start an Android Emulator from the Device Manager.
+   - Click the green **Run (▶)** button in the top toolbar of Android Studio.
+
+3. **Using the App**:
+   - Copy some audiobooks or audio files (`.mp3`, `.m4a`, `.aac`, etc.) into a folder on your phone (e.g., `Download` or `Audiobooks`).
+   - Open the app and tap **Choose Audiobook Folder**.
+   - Select your folder and tap **"Use this folder"** (and grant permission).
+   - Tap any book in your library to start listening!

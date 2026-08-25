@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Open Book Base -->
+    <path
+        android:pathData="M54,49 C48,46 38,45 28,47 C26.9,47.2 26,48.1 26,49.2 L26,73.5 C26,74.8 27.2,75.8 28.5,75.6 C37.8,73.8 47.5,75.2 53.2,78.2 C53.7,78.5 54.3,78.5 54.8,78.2 C60.5,75.2 70.2,73.8 79.5,75.6 C80.8,75.8 82,74.8 82,73.5 L82,49.2 C82,48.1 81.1,47.2 80,47 C70,45 60,46 54,49 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="45"
+                android:endX="54"
+                android:endY="79"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#F4C27F" />
+                <item android:offset="1.0" android:color="#E07A5F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Book Spine Divider -->
+    <path
+        android:pathData="M54,49 L54,78"
+        android:strokeColor="#9C4431"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- Book Page Lines (Left) -->
+    <path
+        android:pathData="M32,55 C38,54 44,55 49,57 M32,61 C38,60 44,61 49,63 M32,67 C38,66 44,67 49,69"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.8"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round" />
+
+    <!-- Book Page Lines (Right) -->
+    <path
+        android:pathData="M59,57 C64,55 70,54 76,55 M59,63 C64,61 70,60 76,61 M59,69 C64,67 70,66 76,67"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.8"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round" />
+
+    <!-- Headphones Band -->
+    <path
+        android:pathData="M33,52 C33,38 42,27 54,27 C66,27 75,38 75,52"
+        android:strokeColor="#FDF0D5"
+        android:strokeWidth="4"
+        android:strokeLineCap="round" />
+
+    <!-- Headphone Earcups -->
+    <path
+        android:pathData="M29,48 C27.5,48 26.5,49.5 26.5,51.5 L26.5,58.5 C26.5,60.5 27.5,62 29,62 C30.5,62 31.5,60.5 31.5,58.5 L31.5,51.5 C31.5,49.5 30.5,48 29,48 Z"
+        android:fillColor="#F4A261" />
+
+    <path
+        android:pathData="M79,48 C77.5,48 76.5,49.5 76.5,51.5 L76.5,58.5 C76.5,60.5 77.5,62 79,62 C80.5,62 81.5,60.5 81.5,58.5 L81.5,51.5 C81.5,49.5 80.5,48 79,48 Z"
+        android:fillColor="#F4A261" />
+
+    <!-- Audio Wave Accent -->
+    <path
+        android:pathData="M48,37 L48,43 M54,34 L54,44 M60,37 L60,43"
+        android:strokeColor="#FDF0D5"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+</vector>
