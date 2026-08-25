@@ -10,11 +10,11 @@ plugins {
 }
 
 android {
-  namespace = "com.example"
+  namespace = "com.janreins.audiobook"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.audiobook.mpabpk"
+    applicationId = "com.janreins.audiobook"
     minSdk = 26
     targetSdk = 36
     versionCode = 1
