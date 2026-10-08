@@ -16,8 +16,11 @@ class PlaybackPositionsTest {
         assertEquals(0L, PlaybackPositions.resumePosition(-1, 0))
     }
 
-    @Test fun completionRestartsFromBeginning() {
-        assertEquals(0L, PlaybackPositions.positionAfterCompletion())
+    @Test fun completionKeepsEndPositionAndReplayResumesAtZero() {
+        val end = PlaybackPositions.positionAfterCompletion(10000L)
+        assertEquals(10000L, end)
+        assertEquals(0L, PlaybackPositions.resumePosition(end, 10000L))
+        assertEquals(0L, PlaybackPositions.positionAfterCompletion(-1L))
     }
 
     @Test fun savesAreThrottled() {

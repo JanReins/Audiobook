@@ -10,6 +10,11 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.janreins.audiobook.data.AudiobookRepository
+import com.janreins.audiobook.data.BookStatus
+import com.janreins.audiobook.data.LibraryStateStore
+import com.janreins.audiobook.data.LibrarySort
+import com.janreins.audiobook.data.LibraryFilter
+import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.data.ProgressMigration
 import com.janreins.audiobook.data.PreferencesManager
 import com.janreins.audiobook.data.model.Audiobook
@@ -38,6 +43,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = AudiobookRepository(application)
     private val prefs = PreferencesManager(application)
+    private val libraryState = LibraryStateStore(application)
+    val libraryVersion = libraryState.libraryVersion
+    private val _librarySort = MutableStateFlow(libraryState.getSort())
+    val librarySort = _librarySort.asStateFlow()
+    private val _libraryFilter = MutableStateFlow(libraryState.getFilter())
+    val libraryFilter = _libraryFilter.asStateFlow()
+
+    fun setLibrarySort(sort: LibrarySort) {
+        libraryState.setSort(sort)
+        _librarySort.value = sort
+    }
+
+    fun setLibraryFilter(filter: LibraryFilter) {
+        libraryState.setFilter(filter)
+        _libraryFilter.value = filter
+    }
+
+    fun getBookStatus(book: Audiobook): BookStatus {
+        val finished = libraryState.isFinished(book.id)
+        val progress = if (finished) 1f else if (book.durationMs > 0L) {
+            (getSavedPosition(book.id).toFloat() / book.durationMs).coerceIn(0f, 1f)
+        } else 0f
+        return BookStatus(progress, finished, libraryState.getLastPlayedAt(book.id))
+    }
+
+    fun markFinished(book: Audiobook) {
+        val lastIndex = book.trackCount - 1
+        val duration = book.tracks.getOrNull(lastIndex)?.durationMs ?: book.durationMs
+        val progress = BookProgress(lastIndex, duration.coerceAtLeast(0L))
+        prefs.saveBookProgress(book.id, progress)
+        AudiobookPlayerManager.applyStoredProgress(book.id, progress)
+        libraryState.setFinished(book.id, true)
+    }
+
+    /** Resets progress to the start; a loaded book is paused and moved to the start too. Bookmarks stay. */
+    fun markUnplayed(book: Audiobook) {
+        prefs.saveBookProgress(book.id, BookProgress())
+        AudiobookPlayerManager.applyStoredProgress(book.id, BookProgress())
+        libraryState.setFinished(book.id, false)
+    }
 
     private val _themeMode = MutableStateFlow(prefs.getThemeMode())
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()

@@ -18,8 +18,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +31,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,10 +53,14 @@ fun AudiobookListItem(
     savedPositionMs: Long,
     isCurrentlyPlaying: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    finished: Boolean = false,
+    onMarkFinished: () -> Unit = {},
+    onMarkUnplayed: () -> Unit = {}
 ) {
-    val progress = remember(savedPositionMs, audiobook.durationMs) {
-        if (audiobook.durationMs > 0) {
+    var showMenu by remember { mutableStateOf(false) }
+    val progress = remember(savedPositionMs, audiobook.durationMs, finished) {
+        if (finished) 1f else if (audiobook.durationMs > 0) {
             (savedPositionMs.toFloat() / audiobook.durationMs.toFloat()).coerceIn(0f, 1f)
         } else {
             0f
@@ -146,21 +157,20 @@ fun AudiobookListItem(
                         )
                     }
 
-                    if (savedPositionMs > 0 && audiobook.durationMs > 0) {
-                        Text(
-                            text = "•",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "$progressPercent% completed",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            ),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                }
+
+                if (finished || (savedPositionMs > 0 && audiobook.durationMs > 0)) {
+                    Text(
+                        text = if (finished) "Finished" else {
+                            val remaining = (audiobook.durationMs - savedPositionMs).coerceAtLeast(0L)
+                            "$progressPercent% · ${formatRemainingDuration(remaining)} left"
+                        },
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
 
                 // Progress Bar if started
@@ -179,6 +189,22 @@ fun AudiobookListItem(
             }
 
             Spacer(modifier = Modifier.width(10.dp))
+
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Options for ${audiobook.title}")
+                }
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Mark as finished") },
+                        onClick = { showMenu = false; onMarkFinished() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Mark as unplayed") },
+                        onClick = { showMenu = false; onMarkUnplayed() }
+                    )
+                }
+            }
 
             // Play / Resume Button
             Surface(
@@ -202,4 +228,11 @@ fun AudiobookListItem(
             }
         }
     }
+}
+
+private fun formatRemainingDuration(durationMs: Long): String {
+    val totalMinutes = durationMs / 60_000L
+    val hours = totalMinutes / 60L
+    val minutes = totalMinutes % 60L
+    return if (hours > 0L) "${hours}h ${minutes.toString().padStart(2, '0')}m" else "${minutes}m"
 }

@@ -6,7 +6,7 @@ object PlaybackPositions {
         return if (durationMs > 0) savedMs.coerceIn(0L, durationMs) else savedMs.coerceAtLeast(0L)
     }
 
-    fun positionAfterCompletion(): Long = 0L
+    fun positionAfterCompletion(durationMs: Long): Long = durationMs.coerceAtLeast(0L)
 
     class SaveThrottle(private val intervalMs: Long = 5000) {
         private var lastSavedMs: Long? = null
