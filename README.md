@@ -46,7 +46,7 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
 5. **Progress Memory**
    - Automatically remembers the track and position for every book, even when choosing a different parent folder containing the same book sub-folders.
    - Seamlessly resumes right where you left off when you open a book again.
-   - Completed books keep 100% progress and restart from the beginning when opened again.
+   - Completed books keep 100% progress. Pressing play at the end (in the app, notification or headset) restarts the whole book; seeking back after finishing clears Finished and continues from there.
    - Marking the loaded book finished or unplayed pauses it and moves the player to the end or the start.
    - Stored 100% privately on your device using Android SharedPreferences.
 
