@@ -45,4 +45,20 @@ class BookGroupingTest {
         assertTrue(books.all { it.tracks.size == 1 })
         assertTrue(BookGrouping.group(emptyList()).isEmpty())
     }
+
+    @Test fun coversAndTrackTimestampsPropagateWithoutCoveringRootFiles() {
+        val uri = Uri.parse("content://books/cover")
+        val root = file("root", "Loose.mp3").copy(folderCoverUri = uri, folderCoverKey = "root-cover")
+        val later = file("10", "Chapter 10.mp3", "f", "Book").copy(
+            lastModified = 123, folderCoverUri = uri, folderCoverKey = "cover|50|123")
+        val first = file("2", "Chapter 2.mp3", "f", "Book").copy(lastModified = 456)
+        val books = BookGrouping.group(listOf(root, later, first))
+        val folder = books.single { it.id == "folder:f" }
+        assertEquals(uri, folder.coverUri)
+        assertEquals("cover|50|123", folder.coverKey)
+        assertEquals(listOf(456L, 123L), folder.tracks.map { it.lastModified })
+        assertNull(books.single { it.id == "file:root" }.coverUri)
+        assertNull(books.single { it.id == "file:root" }.coverKey)
+    }
+
 }

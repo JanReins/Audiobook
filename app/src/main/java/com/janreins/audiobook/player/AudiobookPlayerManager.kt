@@ -288,7 +288,14 @@ object AudiobookPlayerManager {
                 val items = tracks.mapIndexed { trackIndex, track ->
                     MediaItem.Builder().setUri(track.uri).setMediaId("${book.id}#$trackIndex")
                         .setMediaMetadata(MediaMetadata.Builder().setTitle(track.title)
-                            .setArtist("Audiobook").setAlbumTitle(book.title).build()).build()
+                            .setArtist("Audiobook").setAlbumTitle(book.title)
+                            // The folder cover goes in extras, not artworkUri: MediaSession always wraps the
+                            // loader in CacheBitmapLoader, which matches on URI *or* data and would keep the
+                            // folder bitmap after the embedded art (artworkData) arrives.
+                            .setExtras(Bundle().apply {
+                                putString(CoverBitmapLoader.EXTRA_BOOK_ID, book.id)
+                                book.coverUri?.let { putString(CoverBitmapLoader.EXTRA_FOLDER_COVER_URI, it.toString()) }
+                            }).build()).build()
                 }
                 player.setMediaItems(items, index, start)
                 player.prepare()

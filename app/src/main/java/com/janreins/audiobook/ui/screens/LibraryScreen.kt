@@ -22,7 +22,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DarkMode
@@ -70,6 +69,7 @@ import com.janreins.audiobook.data.BookStatus
 import com.janreins.audiobook.data.LibrarySort
 import com.janreins.audiobook.data.LibraryFilter
 import com.janreins.audiobook.data.LibrarySorting
+import com.janreins.audiobook.ui.components.BookCover
 import com.janreins.audiobook.ui.components.AudiobookListItem
 import com.janreins.audiobook.ui.components.ThemeSelectionDialog
 import com.janreins.audiobook.ui.theme.AppThemeMode
@@ -412,24 +412,11 @@ fun MiniPlayerBar(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp)),
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Box(
-                    modifier = Modifier.size(44.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoStories,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
+            BookCover(
+                book = audiobook,
+                modifier = Modifier.size(44.dp),
+                cornerRadius = 12.dp
+            )
 
             Spacer(modifier = Modifier.width(12.dp))
 

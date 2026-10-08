@@ -29,6 +29,7 @@ import com.janreins.audiobook.MainActivity
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private var coverBitmapLoader: CoverBitmapLoader? = null
     private var prefs: PreferencesManager? = null
     // Held strongly: SharedPreferences only keeps weak references to listeners.
     private val skipLabelListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -104,7 +105,11 @@ class PlaybackService : MediaSessionService() {
         val activity = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
+        val coverLoader = CoverBitmapLoader(this).also { coverBitmapLoader = it }
         session = MediaSession.Builder(this, sessionPlayer)
+            // MediaSession wraps this in CacheBitmapLoader; the folder cover travels in extras so that
+            // cache never matches it against later embedded art (see playBook).
+            .setBitmapLoader(coverLoader)
             .setSessionActivity(activity)
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(
@@ -244,6 +249,8 @@ class PlaybackService : MediaSessionService() {
         prefs?.unregisterChangeListener(skipLabelListener)
         session?.run { player.release(); release() }
         session = null
+        coverBitmapLoader?.release()
+        coverBitmapLoader = null
         super.onDestroy()
     }
 }

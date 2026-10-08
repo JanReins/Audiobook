@@ -11,5 +11,7 @@ data class ScannedAudioFile(
     val parentDocumentId: String?,
     val parentName: String?,
     val isInRoot: Boolean,
-    val durationMs: Long
+    val durationMs: Long,
+    val folderCoverUri: Uri? = null,
+    val folderCoverKey: String? = null
 )

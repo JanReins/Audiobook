@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoStories
-import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Card
@@ -98,33 +96,12 @@ fun AudiobookListItem(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Audiobook Cover Art / Badge with Clean Minimal styling
-            Surface(
-                modifier = Modifier
-                    .size(54.dp)
-                    .clip(RoundedCornerShape(14.dp)),
-                color = if (isCurrentlyPlaying) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.primaryContainer
-                }
-            ) {
-                Box(
-                    modifier = Modifier.size(54.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isCurrentlyPlaying) Icons.Default.Equalizer else Icons.Default.AutoStories,
-                        contentDescription = null,
-                        tint = if (isCurrentlyPlaying) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.primary
-                        },
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-            }
+            BookCover(
+                book = audiobook,
+                modifier = Modifier.size(54.dp),
+                cornerRadius = 14.dp,
+                showPlayingOverlay = isCurrentlyPlaying
+            )
 
             Spacer(modifier = Modifier.width(14.dp))
 
