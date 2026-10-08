@@ -33,11 +33,11 @@ class ChapterRulesTest {
         assertEquals(listOf(1000L, 4000L), result.map { it.endMs })
     }
 
-    @Test fun zeroLengthAndInvertedEntriesAreDroppedAndOpenEndsInferred() {
+    @Test fun invertedEntriesAreDroppedAndOpenEndsInferred() {
         val result = ChapterRules.buildForTrack(0, listOf(RawChapter(0, C.TIME_UNSET, "First"),
-            RawChapter(500, 500, "Zero"), RawChapter(1000, 500, "Inverted"), RawChapter(1500, C.TIME_UNSET, "Last")), 2000)
+            RawChapter(1000, 500, "Inverted"), RawChapter(1500, C.TIME_UNSET, "Last")), 4000)
         assertEquals(listOf("First", "Last"), result.map { it.title })
-        assertEquals(listOf(1500L, 2000L), result.map { it.endMs })
+        assertEquals(listOf(1500L, 4000L), result.map { it.endMs })
     }
 
     @Test fun zeroLengthMarkerDoesNotShadowRealChapterWithSameStart() {
@@ -63,8 +63,33 @@ class ChapterRulesTest {
             RawChapter(50_000, 101_000, "Two"), RawChapter(101_000, 130_000, "Three"),
             RawChapter(100_000 + ChapterRules.END_TOLERANCE_MS, 140_000, "Beyond")), 100_000)
         assertEquals(listOf("One", "Two", "Three"), result.map { it.title })
-        assertEquals(listOf(0L, 50_000L, 99_999L), result.map { it.startMs })
-        assertEquals(listOf(50_000L, 100_000L, 100_000L), result.map { it.endMs })
+        assertEquals(listOf(0L, 50_000L, 99_000L), result.map { it.startMs })
+        assertEquals(listOf(50_000L, 99_000L, 100_000L), result.map { it.endMs })
+    }
+
+    @Test fun lastChapterIsNeverUnderOneSecondAndExtraTailChaptersAreDropped() {
+        // Starts in the final second and just past the end: the first is kept at 1 s before the end,
+        // the next would be under 1 s and is dropped; the last chapter can't end the book on selection.
+        val result = ChapterRules.buildForTrack(0, listOf(RawChapter(0, C.TIME_UNSET, "Body"),
+            RawChapter(99_700, C.TIME_UNSET, "Final second"), RawChapter(100_500, 103_000, "Past end")), 100_000)
+        assertEquals(listOf("Body", "Final second"), result.map { it.title })
+        assertEquals(listOf(0L to 99_000L, 99_000L to 100_000L), result.map { it.startMs to it.endMs })
+        assertTrue(result.last().endMs - result.last().startMs >= ChapterRules.MIN_LAST_CHAPTER_MS)
+        // A normal last chapter is untouched.
+        val normal = ChapterRules.buildForTrack(0, listOf(RawChapter(0, C.TIME_UNSET, "A"),
+            RawChapter(98_000, C.TIME_UNSET, "B")), 100_000)
+        assertEquals(listOf(0L to 98_000L, 98_000L to 100_000L), normal.map { it.startMs to it.endMs })
+    }
+
+    @Test fun endEqualToStartIsAnUnknownEndUnlessItDuplicatesAnotherStart() {
+        val result = ChapterRules.buildForTrack(0, listOf(RawChapter(0, 0, "One"),
+            RawChapter(30_000, 30_000, "Two"), RawChapter(60_000, 60_000, "Marker"),
+            RawChapter(60_000, 90_000, "Three")), 120_000)
+        assertEquals(listOf("One", "Two", "Three"), result.map { it.title })
+        assertEquals(listOf(0L to 30_000L, 30_000L to 60_000L, 60_000L to 90_000L), result.map { it.startMs to it.endMs })
+        // Last one with end == start: open, so it runs to the end of the file.
+        val last = ChapterRules.buildForTrack(0, listOf(RawChapter(0, 50_000, "A"), RawChapter(50_000, 50_000, "B")), 120_000)
+        assertEquals(50_000L to 120_000L, last.last().let { it.startMs to it.endMs })
     }
 
     @Test fun unknownDurationKeepsLastOpenAndEmptyResultFallsBack() {

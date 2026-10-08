@@ -1,7 +1,12 @@
 package com.janreins.audiobook.data
 
 import android.content.Context
+import android.net.Uri
 import android.util.AtomicFile
+import androidx.media3.exoplayer.source.TrackGroupArray
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.mp4.Mp4Extractor
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -44,7 +49,13 @@ object ChapterRepository {
 
     fun init(context: Context) { this.context = context.applicationContext }
     fun key(documentId: String, sizeBytes: Long, lastModified: Long) =
-        "v1|" + DurationCache.key(documentId, sizeBytes, lastModified)
+        cacheKey(DurationCache.key(documentId, sizeBytes, lastModified))
+
+    /**
+     * v2: QuickTime chapter tracks are read (v1 used MetadataRetriever's default extractor flags, which skip
+     * them), so v1 entries are ignored and pruned on the next scan.
+     */
+    fun cacheKey(durationKey: String) = "v2|$durationKey"
 
     private fun file(key: String): File = File(context.filesDir, "chapters/${hash(key)}.json")
     private fun hash(key: String) = MessageDigest.getInstance("SHA-1").digest(key.toByteArray(Charsets.UTF_8))
@@ -119,16 +130,29 @@ object ChapterRepository {
     }
 
     private suspend fun extract(track: AudioTrack): List<RawChapter> {
-        // Safe off the main thread: the retriever runs on Media3's shared worker thread, not the caller's looper.
-        val retriever = MetadataRetriever.Builder(context, MediaItem.fromUri(track.uri)).build()
+        val retriever = newRetriever(context, track.uri)
         try {
-            val groups = retriever.retrieveTrackGroups().await()
             // Formats within an adaptive group share chapters; use one audio format per group.
-            return (0 until groups.length).flatMap { i ->
-                val group = groups[i]
-                if (group.type == C.TRACK_TYPE_AUDIO) ChapterMetadata.map(group.getFormat(0).metadata) else emptyList()
-            }
+            return chaptersOf(retriever.retrieveTrackGroups().await())
         } finally { retriever.close() }
+    }
+
+    /**
+     * MetadataRetriever's default MP4 flags include FLAG_OMIT_TRACK_SAMPLE_TABLE, which skips the QuickTime
+     * chapter track (only Nero chpl would be found). Reading the full sample table costs memory for long
+     * M4Bs, but only once per file, lazily, and the result is cached.
+     * Safe off the main thread: the retriever runs on Media3's shared worker thread, not the caller's looper.
+     */
+    internal fun newRetriever(context: Context, uri: Uri): MetadataRetriever =
+        MetadataRetriever.Builder(context, MediaItem.fromUri(uri))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(context,
+                DefaultExtractorsFactory().setMp4ExtractorFlags(Mp4Extractor.FLAG_READ_SEF_DATA)))
+            .build()
+
+    /** Chapters of the first audio track group (see [newRetriever]). */
+    internal fun chaptersOf(groups: TrackGroupArray): List<RawChapter> = (0 until groups.length).flatMap { i ->
+        val group = groups[i]
+        if (group.type == C.TRACK_TYPE_AUDIO) ChapterMetadata.map(group.getFormat(0).metadata) else emptyList()
     }
 
     private suspend fun <T> ListenableFuture<T>.await(): T = suspendCancellableCoroutine { continuation ->

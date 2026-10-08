@@ -25,6 +25,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class ChapterExtractionTest {
     @Test fun quickTimeChapters() = assertFixture("fx.m4b", Mp4Extractor(SubtitleParser.Factory.UNSUPPORTED, 0))
+    @Test fun quickTimeOnlyChapters() = assertFixture("fx_qt_only.m4b", Mp4Extractor(SubtitleParser.Factory.UNSUPPORTED, 0))
     @Test fun neroChaptersWithoutEnds() = assertFixture("fx_chpl_only.m4b", Mp4Extractor(SubtitleParser.Factory.UNSUPPORTED, 0))
     @Test fun id3ChaptersAndToc() = assertFixture("fx.mp3", Mp3Extractor())
 

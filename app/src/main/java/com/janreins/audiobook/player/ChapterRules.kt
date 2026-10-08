@@ -9,29 +9,50 @@ data class RawChapter(val startMs: Long, val endMs: Long, val title: String?, va
 object ChapterRules {
     /** Scanned VBR MP3 durations can be a little short; chapters starting just past them are kept. */
     const val END_TOLERANCE_MS = 2000L
+    /** The final chapter always lasts at least this long, so selecting it cannot end the book at once. */
+    const val MIN_LAST_CHAPTER_MS = 1000L
 
     fun buildForTrack(trackIndex: Int, raw: List<RawChapter>, trackDurationMs: Long): List<BookChapter> {
         val known = trackDurationMs > 0
-        val sorted = raw.asSequence()
-            .filter { !it.hidden }
+        val visible = raw.filter { !it.hidden }
             // Unknown (C.TIME_UNSET) or negative starts count from the beginning of the file.
             .map { if (it.startMs < 0) it.copy(startMs = 0) else it }
-            // Zero-length or inverted entries go before de-duplication, so they cannot shadow a real chapter.
-            .filter { it.endMs == C.TIME_UNSET || it.endMs > it.startMs }
-            .filter { !known || it.startMs < trackDurationMs + END_TOLERANCE_MS }
-            // Kept within the tolerance: clamp the start into the file so it remains reachable.
-            .map { if (known && it.startMs >= trackDurationMs) it.copy(startMs = trackDurationMs - 1) else it }
-            .sortedBy { it.startMs }.distinctBy { it.startMs }.toList()
+        val realStarts = visible.filter { it.endMs != it.startMs }.mapTo(HashSet()) { it.startMs }
+        val cleaned = visible.mapNotNull {
+            when {
+                // end == start: an unknown end (filled from the next start), unless it is a zero-length
+                // marker sharing its start with a real chapter, which it must not shadow.
+                it.endMs == it.startMs -> if (it.startMs in realStarts) null else it.copy(endMs = C.TIME_UNSET)
+                it.endMs != C.TIME_UNSET && it.endMs < it.startMs -> null // inverted
+                else -> it
+            }
+        }.filter { !known || it.startMs < trackDurationMs + END_TOLERANCE_MS }
+            .sortedBy { it.startMs }.distinctBy { it.startMs }
+        val sorted = if (!known) cleaned else clampTail(cleaned, trackDurationMs)
         val chapters = sorted.mapIndexedNotNull { i, chapter ->
             val inferred = if (chapter.endMs != C.TIME_UNSET) chapter.endMs
                 else sorted.getOrNull(i + 1)?.startMs ?: trackDurationMs.takeIf { it > 0 } ?: C.TIME_UNSET
             // Never run past the file: a stated end beyond the duration is clamped to it.
-            val end = if (inferred != C.TIME_UNSET && trackDurationMs > 0) minOf(inferred, trackDurationMs) else inferred
+            val end = if (inferred != C.TIME_UNSET && known) minOf(inferred, trackDurationMs) else inferred
             if (end != C.TIME_UNSET && end <= chapter.startMs) null
             else BookChapter(trackIndex, chapter.startMs, end, chapter.title.orEmpty(), true)
         }
         if (chapters.isEmpty()) return listOf(BookChapter(trackIndex, 0, trackDurationMs.takeIf { it > 0 } ?: C.TIME_UNSET, "", false))
         return chapters.mapIndexed { i, chapter -> if (i == 0 && chapter.startMs > 0) chapter.copy(startMs = 0) else chapter }
+    }
+
+    /**
+     * The last chapter may not be shorter than [MIN_LAST_CHAPTER_MS]: one starting in the final second, or up
+     * to [END_TOLERANCE_MS] past an underestimated (VBR) duration, is kept but moved to start 1 s before the
+     * end. Any further chapters in that window would be under 1 s and are dropped.
+     */
+    private fun clampTail(sorted: List<RawChapter>, durationMs: Long): List<RawChapter> {
+        val tailStart = (durationMs - MIN_LAST_CHAPTER_MS).coerceAtLeast(0)
+        val body = sorted.filter { it.startMs < tailStart }
+        val tail = sorted.firstOrNull { it.startMs >= tailStart } ?: return body
+        // The chapter before it now ends where the moved one starts.
+        val previous = body.lastOrNull()?.let { if (it.endMs > tailStart) it.copy(endMs = tailStart) else it }
+        return body.dropLast(1) + listOfNotNull(previous) + tail.copy(startMs = tailStart)
     }
 }
 
