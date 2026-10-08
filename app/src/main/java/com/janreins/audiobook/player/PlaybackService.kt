@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.SystemClock
 import android.os.Bundle
+import android.view.KeyEvent
+import androidx.core.content.IntentCompat
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -33,8 +35,10 @@ class PlaybackService : MediaSessionService() {
         if (key == PreferencesManager.KEY_SKIP_BACK_SECONDS || key == PreferencesManager.KEY_SKIP_FORWARD_SECONDS) {
             val p = prefs ?: return@OnSharedPreferenceChangeListener
             session?.setMediaButtonPreferences(mediaButtons(p))
+            sessionPlayer?.notifySeekIncrementsChanged()
         }
     }
+    private var sessionPlayer: SessionPlayer? = null
     private var pausedAtMs: Long? = null
     private var pausedMediaId: String? = null
 
@@ -61,25 +65,7 @@ class PlaybackService : MediaSessionService() {
             .build()
         val prefs = PreferencesManager(this).also { this.prefs = it }
         prefs.registerChangeListener(skipLabelListener)
-        val sessionPlayer = object : ForwardingPlayer(player) {
-            override fun getSeekBackIncrement(): Long = prefs.getSkipBackSeconds() * 1000L
-            override fun getSeekForwardIncrement(): Long = prefs.getSkipForwardSeconds() * 1000L
-            override fun seekBack() {
-                seekTo(SeekMath.clampSeek(currentPosition, -seekBackIncrement, duration))
-            }
-            override fun seekForward() {
-                seekTo(SeekMath.clampSeek(currentPosition, seekForwardIncrement, duration))
-            }
-            // Smart rewind lives here so the app, notification, lock screen and headset buttons all get it.
-            override fun play() {
-                applySmartRewind(player, prefs)
-                super.play()
-            }
-            override fun setPlayWhenReady(playWhenReady: Boolean) {
-                if (playWhenReady) applySmartRewind(player, prefs)
-                super.setPlayWhenReady(playWhenReady)
-            }
-        }
+        val sessionPlayer = SessionPlayer(player, prefs).also { this.sessionPlayer = it }
         player.addListener(object : Player.Listener {
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 if (!playWhenReady && player.currentMediaItem != null && pausedAtMs == null) {
@@ -131,6 +117,20 @@ class PlaybackService : MediaSessionService() {
                         .build()
                 }
 
+                override fun onMediaButtonEvent(
+                    session: MediaSession, controllerInfo: MediaSession.ControllerInfo, intent: Intent
+                ): Boolean {
+                    val event = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                        ?: return false
+                    val direction = MediaKeySkips.direction(event.keyCode, session.player.mediaItemCount)
+                        ?: return false
+                    // Consume both key-down and key-up; act once on the first key-down.
+                    if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                        if (direction < 0) session.player.seekBack() else session.player.seekForward()
+                    }
+                    return true
+                }
+
                 override fun onCustomCommand(
                     session: MediaSession, controller: MediaSession.ControllerInfo,
                     customCommand: SessionCommand, args: Bundle
@@ -153,6 +153,51 @@ class PlaybackService : MediaSessionService() {
             // Replace the default previous/next controls with single-file seeks.
             .setMediaButtonPreferences(mediaButtons(prefs))
             .build()
+    }
+
+    /**
+     * Session-facing player: configured skip increments, clamped seeks and smart rewind, so the app,
+     * notification, lock screen and headset buttons all behave the same.
+     */
+    private inner class SessionPlayer(
+        private val exo: ExoPlayer, private val prefs: PreferencesManager
+    ) : ForwardingPlayer(exo) {
+        private val listeners = mutableListOf<Player.Listener>()
+
+        override fun addListener(listener: Player.Listener) {
+            super.addListener(listener)
+            listeners += listener
+        }
+        override fun removeListener(listener: Player.Listener) {
+            super.removeListener(listener)
+            listeners -= listener
+        }
+        override fun getSeekBackIncrement(): Long = prefs.getSkipBackSeconds() * 1000L
+        override fun getSeekForwardIncrement(): Long = prefs.getSkipForwardSeconds() * 1000L
+        override fun seekBack() {
+            seekTo(SeekMath.clampSeek(currentPosition, -seekBackIncrement, duration))
+        }
+        override fun seekForward() {
+            seekTo(SeekMath.clampSeek(currentPosition, seekForwardIncrement, duration))
+        }
+        override fun play() {
+            applySmartRewind(exo, prefs)
+            super.play()
+        }
+        override fun setPlayWhenReady(playWhenReady: Boolean) {
+            if (playWhenReady) applySmartRewind(exo, prefs)
+            super.setPlayWhenReady(playWhenReady)
+        }
+
+        /** ExoPlayer's own increments never change, so tell the session (and its controllers) directly. */
+        fun notifySeekIncrementsChanged() {
+            val back = seekBackIncrement
+            val forward = seekForwardIncrement
+            listeners.toList().forEach {
+                it.onSeekBackIncrementChanged(back)
+                it.onSeekForwardIncrementChanged(forward)
+            }
+        }
     }
 
     private fun applySmartRewind(player: Player, prefs: PreferencesManager) {

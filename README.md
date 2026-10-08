@@ -49,7 +49,7 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
 
 6. **Background Playback & Media3 Media Controls**
    - Background playback with notification and lock-screen controls for play/pause, configured skip intervals and -1m/+1m (button visibility depends on Android/device).
-   - Supports headset/Bluetooth media buttons and auto-pauses on headphone disconnect and calls.
+   - Supports headset/Bluetooth media buttons and auto-pauses on headphone disconnect and calls. For single-file books, the headset's next/previous keys skip forward/back by the configured intervals (instead of restarting the file); multi-file books keep next/previous track. Fast-forward/rewind keys always use the configured intervals.
 
 7. **100% Private & Pure Offline**
    - Zero internet permissions in the Android Manifest.

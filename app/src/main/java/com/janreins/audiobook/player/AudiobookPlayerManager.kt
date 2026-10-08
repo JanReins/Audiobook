@@ -127,8 +127,9 @@ object AudiobookPlayerManager {
         }
 
         override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
-            _playbackSpeed.value = playbackParameters.speed
-            prefsManager?.savePlaybackSpeed(playbackParameters.speed)
+            val speed = SpeedSteps.snap(playbackParameters.speed)
+            _playbackSpeed.value = speed
+            prefsManager?.savePlaybackSpeed(speed)
         }
 
         override fun onEvents(player: Player, events: Player.Events) {
@@ -155,6 +156,9 @@ object AudiobookPlayerManager {
                     if (controller !== disconnected) return
                     persistPosition()
                     positionTrackerJob?.cancel()
+                    // The service (and its end-of-track flag and volume) is gone; a stale countdown
+                    // would otherwise pause a later session unexpectedly.
+                    cancelSleepTimerLocally()
                     _isPlaying.value = false
                     controller = null
                     controllerFuture = null
@@ -296,6 +300,15 @@ object AudiobookPlayerManager {
         _playbackSpeed.value = snapped
         prefsManager?.savePlaybackSpeed(snapped)
         withController { it.setPlaybackSpeed(snapped) }
+    }
+
+    private fun cancelSleepTimerLocally() {
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        sleepDeadlineMs = null
+        lastSleepVolume = 1f
+        _activeSleepOption.value = SleepTimerOption.OFF
+        _sleepTimerRemainingSeconds.value = null
     }
 
     fun setSleepTimer(option: SleepTimerOption, context: Context? = null) {
