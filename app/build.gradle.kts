@@ -6,7 +6,7 @@ plugins {
 
 android {
   namespace = "com.janreins.audiobook"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+  compileSdk { version = release(37) }
 
   defaultConfig {
     applicationId = "com.janreins.audiobook"
