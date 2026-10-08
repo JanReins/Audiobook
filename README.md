@@ -2,6 +2,14 @@
 
 A simple, reliable, 100% offline and privacy-first audiobook player for Android.
 
+## Download the APK
+
+Every push to `main` and every pull request builds a debug APK in GitHub Actions. While signed in to GitHub, open the **Actions** tab → an **Android CI** run → **Artifacts** → **app-debug-apk** to download a zip containing `app-debug.apk`.
+
+Pushing a tag like `v1.0.0` creates a GitHub Release with the APK attached under **Releases**. This is a debug-signed build; enable **Install unknown apps** on your Android device to sideload it.
+
+A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`, `KEY_PASSWORD`, and optional `KEY_ALIAS`, which defaults to `upload`) and is not built by CI yet.
+
 ## Features
 
 1. **Folder Selection & Recursive Sub-Folder Scanning**
@@ -59,6 +67,8 @@ In this release, all unused template dependencies (including Firebase, Google Se
 ---
 
 ## How to Open and Run (for Beginners)
+
+To build from the command line with JDK 17+, run `./gradlew assembleDebug` from the project's root folder.
 
 1. **Open in Android Studio**:
    - Launch **Android Studio** (Giraffe, Hedgehog, Iguana, Jellyfish, Ladybug or newer).
