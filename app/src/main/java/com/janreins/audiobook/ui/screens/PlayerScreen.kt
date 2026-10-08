@@ -21,7 +21,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
@@ -63,7 +62,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +74,7 @@ import com.janreins.audiobook.data.model.Bookmark
 import com.janreins.audiobook.data.model.SleepTimerOption
 import com.janreins.audiobook.ui.components.AddBookmarkDialog
 import com.janreins.audiobook.ui.components.BookmarkBottomSheet
+import com.janreins.audiobook.ui.components.BookCover
 import com.janreins.audiobook.ui.components.PlayerControls
 import com.janreins.audiobook.ui.components.SeekBarWithTime
 import com.janreins.audiobook.ui.components.SleepTimerDialog
@@ -306,37 +305,14 @@ fun PlayerScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Clean Minimalist Cover Artwork with 40dp rounded corners and subtle ocean gradient
-            Surface(
+            BookCover(
+                book = audiobook,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1.08f)
-                    .clip(RoundedCornerShape(40.dp))
                     .shadow(elevation = 2.dp, shape = RoundedCornerShape(40.dp)),
-                shape = RoundedCornerShape(40.dp),
-                color = MaterialTheme.colorScheme.primaryContainer
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    MaterialTheme.colorScheme.secondaryContainer
-                                )
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.AutoStories,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-                        modifier = Modifier.size(96.dp)
-                    )
-                }
-            }
+                cornerRadius = 40.dp
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 

@@ -19,6 +19,7 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
    - Supports popular audiobook formats: MP3, M4A, M4B, AAC, FLAC, OGG, WAV, WMA, and OPUS.
 
 2. **Clean Book Library**
+   - **Cover art**: Embedded artwork first, then `cover.jpg`, `cover.jpeg`, `cover.png`, `folder.jpg`, `folder.jpeg`, or `folder.png` (case-insensitive) for folder books, then coloured initials. Covers appear in the library, player, mini-player, and media controls. Thumbnails are cached locally; no network.
    - Automatically formats file names into clean, readable book titles.
    - Displays duration and listening progress percentage on every book. Durations are cached for faster library loading.
    - Search by title or filename, filter by listening status, and sort by title, recently played, progress, or duration. Sort and filter choices are remembered.

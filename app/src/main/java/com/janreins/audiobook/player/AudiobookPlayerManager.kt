@@ -288,7 +288,10 @@ object AudiobookPlayerManager {
                 val items = tracks.mapIndexed { trackIndex, track ->
                     MediaItem.Builder().setUri(track.uri).setMediaId("${book.id}#$trackIndex")
                         .setMediaMetadata(MediaMetadata.Builder().setTitle(track.title)
-                            .setArtist("Audiobook").setAlbumTitle(book.title).build()).build()
+                            .setArtist("Audiobook").setAlbumTitle(book.title)
+                            .setExtras(Bundle().apply { putString(CoverBitmapLoader.EXTRA_BOOK_ID, book.id) })
+                            // Folder cover only; embedded art arrives as artworkData and takes precedence.
+                            .apply { book.coverUri?.let { setArtworkUri(it) } }.build()).build()
                 }
                 player.setMediaItems(items, index, start)
                 player.prepare()

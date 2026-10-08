@@ -17,6 +17,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
+import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.DefaultMediaNotificationProvider
 import com.janreins.audiobook.R
 import androidx.media3.session.MediaSessionService
@@ -29,6 +30,7 @@ import com.janreins.audiobook.MainActivity
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private var coverBitmapLoader: CoverBitmapLoader? = null
     private var prefs: PreferencesManager? = null
     // Held strongly: SharedPreferences only keeps weak references to listeners.
     private val skipLabelListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
@@ -104,7 +106,9 @@ class PlaybackService : MediaSessionService() {
         val activity = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
+        val coverLoader = CoverBitmapLoader(this).also { coverBitmapLoader = it }
         session = MediaSession.Builder(this, sessionPlayer)
+            .setBitmapLoader(CacheBitmapLoader(coverLoader))
             .setSessionActivity(activity)
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(
@@ -244,6 +248,8 @@ class PlaybackService : MediaSessionService() {
         prefs?.unregisterChangeListener(skipLabelListener)
         session?.run { player.release(); release() }
         session = null
+        coverBitmapLoader?.release()
+        coverBitmapLoader = null
         super.onDestroy()
     }
 }

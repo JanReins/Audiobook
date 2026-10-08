@@ -73,10 +73,18 @@ class AudiobookRepository(private val context: Context) {
             emptyArray()
         }
 
+        val members = mutableListOf<ScannedAudioFile>()
+        val images = mutableMapOf<String, DocumentFile>()
         for (file in files) {
             try {
-                if (file.isFile && isAudioFile(file)) {
-                    val fileName = file.name ?: "Untitled Audio"
+                val name = file.name
+                val isFile = file.isFile
+                if (currentDepth > 0 && isFile && name != null &&
+                    CoverSources.pickFolderCover(listOf(name)) != null) {
+                    images.putIfAbsent(name, file)
+                }
+                if (isFile && isAudioFile(file)) {
+                    val fileName = name ?: "Untitled Audio"
                     val size = file.length()
                     val modified = file.lastModified()
                     val id = documentId(file.uri)
@@ -85,7 +93,7 @@ class AudiobookRepository(private val context: Context) {
                     val duration = durationCache.get(key) ?: extractDuration(file.uri).also {
                         durationCache.put(key, it)
                     }
-                    results.add(ScannedAudioFile(file.uri, id, fileName, size, modified,
+                    members.add(ScannedAudioFile(file.uri, id, fileName, size, modified,
                         documentId(directory.uri), directory.name, currentDepth == 0, duration))
                 } else if (file.isDirectory && currentDepth < maxDepth) {
                     // Dive into the sub-folder to look for more audio files
@@ -101,6 +109,13 @@ class AudiobookRepository(private val context: Context) {
                 // Ignore single file or sub-folder read failures so the rest continues uninterrupted
             }
         }
+        val cover = CoverSources.pickFolderCover(images.keys.toList())?.let { images[it] }
+        val coverKey = try {
+            cover?.let { DurationCache.key(documentId(it.uri), it.length(), it.lastModified()) }
+        } catch (_: Exception) { null }
+        results.addAll(members.map {
+            it.copy(folderCoverUri = cover?.uri, folderCoverKey = coverKey)
+        })
     }
 
     /**

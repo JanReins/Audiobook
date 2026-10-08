@@ -12,6 +12,7 @@
     <!-- Pure offline - zero internet permission -->
 
     <application
+        android:name=".AudiobookApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"

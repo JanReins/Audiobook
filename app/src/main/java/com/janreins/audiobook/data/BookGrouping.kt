@@ -11,13 +11,15 @@ object BookGrouping {
         val sorted = members.sortedWith(compareBy(NaturalStringComparator) { it.name })
         val first = sorted.first()
         val tracks = sorted.map {
-            AudioTrack(it.uri, it.documentId, it.name, cleanFileName(it.name), it.durationMs, it.sizeBytes)
+            AudioTrack(it.uri, it.documentId, it.name, cleanFileName(it.name), it.durationMs, it.sizeBytes, it.lastModified)
         }
+        val cover = sorted.firstOrNull { !it.isInRoot && it.folderCoverUri != null }
         val duration = tracks.sumOf { it.durationMs }
         Audiobook(id, first.uri,
             if (first.isInRoot) cleanFileName(first.name) else cleanTitle(first.parentName.orEmpty()),
             if (tracks.size == 1) first.name else "${tracks.size} files",
-            duration, tracks.sumOf { it.sizeBytes }, AudiobookRepository.formatDuration(duration), tracks)
+            duration, tracks.sumOf { it.sizeBytes }, AudiobookRepository.formatDuration(duration), tracks,
+            cover?.folderCoverUri, cover?.folderCoverKey)
     }.sortedWith(compareBy(NaturalStringComparator) { it.title })
 
     private fun cleanTitle(name: String) = name.replace('_', ' ').trim()
