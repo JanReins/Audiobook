@@ -16,6 +16,8 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.janreins.audiobook.data.PreferencesManager
+import com.janreins.audiobook.data.model.AudioTrack
+import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.data.model.SleepTimerOption
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +47,13 @@ object AudiobookPlayerManager {
 
     private val _currentBook = MutableStateFlow<Audiobook?>(null)
     val currentBook: StateFlow<Audiobook?> = _currentBook.asStateFlow()
+    private val _currentTrackIndex = MutableStateFlow(0)
+    val currentTrackIndex = _currentTrackIndex.asStateFlow()
+    private val _trackCount = MutableStateFlow(1)
+    val trackCount = _trackCount.asStateFlow()
+
+    private fun bookId(item: MediaItem?) = item?.mediaId?.substringBeforeLast("#")
+
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
     private val _currentPositionMs = MutableStateFlow(0L)
@@ -74,20 +83,22 @@ object AudiobookPlayerManager {
             updatePosition(player)
             if (playbackState == Player.STATE_ENDED) {
                 _isPlaying.value = false
-                _currentPositionMs.value = PlaybackPositions.positionAfterCompletion()
+                _currentTrackIndex.value = 0
+                _currentPositionMs.value = 0L
                 persistPosition()
-                player.seekTo(0)
+                player.seekTo(0, 0L)
                 player.pause()
             }
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val player = controller ?: return
-            if (mediaItem != null && _currentBook.value?.id != mediaItem.mediaId) {
+            if (mediaItem != null && _currentBook.value?.id != bookId(mediaItem)) {
                 persistPosition()
-                _currentBook.value = knownBooks[mediaItem.mediaId]
+                _currentBook.value = knownBooks[bookId(mediaItem)]
             }
             updatePosition(player)
+            persistPosition()
         }
 
         override fun onPositionDiscontinuity(
@@ -180,30 +191,44 @@ object AudiobookPlayerManager {
         }
     }
 
-    fun playBook(context: Context, book: Audiobook, customStartPosMs: Long? = null) {
+    fun playBook(context: Context, book: Audiobook, customStartPosMs: Long? = null,
+                 customTrackIndex: Int? = null) {
         initialize(context)
         knownBooks[book.id] = book
         _errorMessage.value = null
         withController { player ->
-            if (player.currentMediaItem?.mediaId == book.id) {
+            val tracks = book.tracks.ifEmpty {
+                listOf(AudioTrack(book.uri, book.id, book.fileName, book.title, book.durationMs, book.sizeBytes))
+            }
+            val sameBook = bookId(player.currentMediaItem) == book.id
+            val saved = prefsManager?.getBookProgress(book.id) ?: BookProgress()
+            val index = (customTrackIndex ?: if (sameBook) player.currentMediaItemIndex else saved.trackIndex)
+                .coerceIn(tracks.indices)
+            val position = customStartPosMs ?: if (customTrackIndex != null) 0L else saved.positionMs
+            val start = PlaybackPositions.resumePosition(position, tracks[index].durationMs)
+            if (sameBook) {
                 _currentBook.value = book
-                if (customStartPosMs != null) seek(player, customStartPosMs)
+                if (customStartPosMs != null || customTrackIndex != null) {
+                    player.seekTo(index, start)
+                    updatePosition(player)
+                    persistPosition()
+                }
                 if (player.playbackState == Player.STATE_IDLE) player.prepare()
                 player.play()
             } else {
                 saveCurrentPosition()
                 _currentBook.value = book
-                _durationMs.value = book.durationMs
-                val saved = prefsManager?.getPlaybackPosition(book.id) ?: 0L
-                val start = if (customStartPosMs != null) {
-                    SeekMath.clampSeek(customStartPosMs, 0, book.durationMs)
-                } else PlaybackPositions.resumePosition(saved, book.durationMs)
+                _currentTrackIndex.value = index
+                _trackCount.value = tracks.size
+                _durationMs.value = tracks[index].durationMs
                 _currentPositionMs.value = start
                 prefsManager?.saveLastPlayedBookId(book.id)
-                val item = MediaItem.Builder().setUri(book.uri).setMediaId(book.id)
-                    .setMediaMetadata(MediaMetadata.Builder().setTitle(book.title)
-                        .setArtist("Audiobook").setAlbumTitle("Audiobook").build()).build()
-                player.setMediaItem(item, start)
+                val items = tracks.mapIndexed { trackIndex, track ->
+                    MediaItem.Builder().setUri(track.uri).setMediaId("${book.id}#$trackIndex")
+                        .setMediaMetadata(MediaMetadata.Builder().setTitle(track.title)
+                            .setArtist("Audiobook").setAlbumTitle(book.title).build()).build()
+                }
+                player.setMediaItems(items, index, start)
                 player.prepare()
                 player.setPlaybackSpeed(_playbackSpeed.value)
                 player.play()
@@ -211,6 +236,9 @@ object AudiobookPlayerManager {
             }
         }
     }
+
+    fun previousTrack() = withController { it.seekToPreviousMediaItem() }
+    fun nextTrack() = withController { it.seekToNextMediaItem() }
 
     fun togglePlayPause(context: Context? = null) {
         if (context != null) initialize(context)
@@ -282,7 +310,12 @@ object AudiobookPlayerManager {
     }
 
     private fun updatePosition(player: Player) {
-        if (player.currentMediaItem?.mediaId != _currentBook.value?.id || player.currentMediaItem == null) return
+        if (bookId(player.currentMediaItem) != _currentBook.value?.id || player.currentMediaItem == null) return
+        _currentTrackIndex.value = if (player.playbackState == Player.STATE_ENDED) 0
+            else player.currentMediaItemIndex.coerceAtLeast(0)
+        _trackCount.value = player.mediaItemCount.coerceAtLeast(1)
+        _durationMs.value = _currentBook.value?.tracks?.getOrNull(_currentTrackIndex.value)?.durationMs
+            ?: _currentBook.value?.durationMs ?: 0L
         _currentPositionMs.value = if (player.playbackState == Player.STATE_ENDED) {
             PlaybackPositions.positionAfterCompletion()
         } else player.currentPosition.coerceAtLeast(0L)
@@ -296,7 +329,7 @@ object AudiobookPlayerManager {
 
     private fun persistPosition() {
         val book = _currentBook.value ?: return
-        prefsManager?.savePlaybackPosition(book.id, _currentPositionMs.value)
+        prefsManager?.saveBookProgress(book.id, BookProgress(_currentTrackIndex.value, _currentPositionMs.value))
         saveThrottle.markSaved(SystemClock.elapsedRealtime())
     }
 

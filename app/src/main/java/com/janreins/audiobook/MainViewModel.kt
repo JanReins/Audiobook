@@ -10,6 +10,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.janreins.audiobook.data.AudiobookRepository
+import com.janreins.audiobook.data.ProgressMigration
 import com.janreins.audiobook.data.PreferencesManager
 import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.data.model.Bookmark
@@ -63,6 +64,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val currentPlayingBook = AudiobookPlayerManager.currentBook
     val isPlaying = AudiobookPlayerManager.isPlaying
     val currentPositionMs = AudiobookPlayerManager.currentPositionMs
+    val currentTrackIndex = AudiobookPlayerManager.currentTrackIndex
+    val trackCount = AudiobookPlayerManager.trackCount
     val durationMs = AudiobookPlayerManager.durationMs
     val playbackSpeed = AudiobookPlayerManager.playbackSpeed
     val activeSleepOption = AudiobookPlayerManager.activeSleepOption
@@ -136,6 +139,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isLoading.value = true
             val books = repository.loadAudiobooksFromFolder(uri)
+            books.forEach { book ->
+                ProgressMigration.migrate(book, prefs::hasBookProgress, prefs::getPlaybackPosition,
+                    prefs::saveBookProgress, prefs::getBookmarks, prefs::saveBookmarks,
+                    prefs::isMigrated, prefs::markMigrated, prefs::getLastPlayedBookId, prefs::saveLastPlayedBookId)
+            }
             _audiobooks.value = books
             _isLoading.value = false
 
@@ -186,6 +194,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         AudiobookPlayerManager.seekTo(positionMs)
     }
 
+    fun previousTrack() = AudiobookPlayerManager.previousTrack()
+    fun nextTrack() = AudiobookPlayerManager.nextTrack()
+
     fun skipBackward15s() {
         AudiobookPlayerManager.skip(-15_000L)
     }
@@ -217,26 +228,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             id = System.currentTimeMillis().toString(),
             audiobookId = currentBook.id,
             positionMs = pos,
-            title = title
+            title = title,
+            trackIndex = AudiobookPlayerManager.currentTrackIndex.value
         )
         prefs.addBookmark(bookmark)
         _currentBookmarks.value = prefs.getBookmarks(currentBook.id)
     }
 
     fun selectBookmark(context: Context, bookmark: Bookmark) {
-        val currentBook = AudiobookPlayerManager.currentBook.value
-        if (currentBook != null && currentBook.id == bookmark.audiobookId) {
-            AudiobookPlayerManager.seekTo(bookmark.positionMs)
-            if (!AudiobookPlayerManager.isPlaying.value) {
-                AudiobookPlayerManager.resume(context)
-            }
-        } else {
-            val targetBook = _audiobooks.value.find { it.id == bookmark.audiobookId }
-            if (targetBook != null) {
-                AudiobookPlayerManager.playBook(context, targetBook, bookmark.positionMs)
-                _currentBookmarks.value = prefs.getBookmarks(targetBook.id)
-            }
-        }
+        val book = AudiobookPlayerManager.currentBook.value?.takeIf { it.id == bookmark.audiobookId }
+            ?: _audiobooks.value.find { it.id == bookmark.audiobookId } ?: return
+        AudiobookPlayerManager.playBook(context, book, bookmark.positionMs, bookmark.trackIndex)
+        _currentBookmarks.value = prefs.getBookmarks(book.id)
     }
 
     fun deleteBookmark(bookmark: Bookmark) {
@@ -245,7 +248,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getSavedPosition(bookId: String): Long {
-        return prefs.getPlaybackPosition(bookId)
+        val progress = prefs.getBookProgress(bookId)
+        val book = _audiobooks.value.find { it.id == bookId } ?: return progress.positionMs
+        val index = progress.trackIndex.coerceIn(0, book.trackCount - 1)
+        return book.tracks.take(index).sumOf { it.durationMs } + progress.positionMs
     }
 
     fun dismissError() {

@@ -2,7 +2,6 @@ plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
   alias(libs.plugins.roborazzi)
-  alias(libs.plugins.secrets)
 }
 
 android {
@@ -56,12 +55,6 @@ android {
     includeInApk = false
     includeInBundle = true
   }
-}
-
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
 }
 
 // Essential dependencies for the pure-offline, privacy-first Audiobook player
