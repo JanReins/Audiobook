@@ -34,7 +34,7 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
      - Fast forward 30 seconds (`+30s`)
      - Fast forward 1 minute (`+1m`)
    - Configurable inner skip intervals: 5, 10, 15, 30, 45, or 60 seconds (defaults: back 15, forward 30).
-   - Previous/next track buttons, a track counter, and a track list with titles and durations for multi-file books. Tap a track to play from its start. The seek bar and skip controls operate within the current track.
+   - A chapter list and previous/next chapter buttons for books with multiple chapters. The seek bar and skip controls operate within the current file.
    - **Playback Speed Selector**: 0.5x–3x in 0.05x steps, with a slider, presets, and reset.
    - **Sleep Timer**: Choose 5, 10, 15, 30, 45, 60, or 90 minutes, or end of track. Live countdown, +5 minute extension, and optional fade-out over the last 30 seconds (enabled by default).
    - **Playback settings**: Adjust skip intervals, smart rewind, and sleep fade-out from the player gear button. Smart rewind is enabled by default: resumes within the current track by 0/2/5/10/20 seconds depending on pause length.
@@ -52,8 +52,8 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
    - Stored 100% privately on your device using Android SharedPreferences.
 
 6. **Background Playback & Media3 Media Controls**
-   - Background playback with notification and lock-screen controls for play/pause, configured skip intervals and -1m/+1m (button visibility depends on Android/device).
-   - Supports headset/Bluetooth media buttons and auto-pauses on headphone disconnect and calls. For single-file books, the headset's next/previous keys skip forward/back by the configured intervals (instead of restarting the file); multi-file books keep next/previous track. Fast-forward/rewind keys always use the configured intervals.
+   - Background playback with notification and lock-screen controls for play/pause, configured skip intervals and chapter navigation (or -1m/+1m when there is only one chapter; button visibility depends on Android/device).
+   - Supports headset/Bluetooth media buttons and auto-pauses on headphone disconnect and calls. Headset next/previous keys follow chapters first, then files, then configured skips for a single file without chapters. Fast-forward/rewind keys always use the configured intervals.
 
 7. **100% Private & Pure Offline**
    - Zero internet permissions in the Android Manifest.
@@ -62,6 +62,16 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
    - Light, dark, and system-adaptive Material Design 3 themes.
 
 ---
+
+## Chapters
+
+Chapters are read locally from M4B/M4A QuickTime chapter tracks, Nero `chpl` metadata, and MP3 ID3 CHAP entries. Files without embedded chapters contribute one chapter using the file title, so multi-file books work immediately.
+
+Open **Chapters** beside the current chapter title to see titles, start times relative to the whole book, and durations (`--:--` when unknown). The current chapter is highlighted and brought into view; tap a row to play from its start. The current title also appears in the mini-player and notification.
+
+**Previous** restarts the current chapter when more than three seconds into it; otherwise it goes to the previous chapter. **Next** goes to the next chapter, including across files, and does nothing on the final chapter. Notification overflow shows Previous chapter/Next chapter when available, otherwise -1m/+1m; the configured skip buttons remain. Headset priority is **chapters > files > skips**.
+
+Chapter metadata is cached privately per file, including files with no embedded chapters. Size or modification time changes invalidate the cache, and library scans prune removed files. All extraction and caching stays offline.
 
 ## How to Open and Run (for Beginners)
 

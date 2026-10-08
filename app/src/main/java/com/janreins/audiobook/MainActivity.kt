@@ -69,6 +69,8 @@ fun AudiobookApp(
     val isPlaying by viewModel.isPlaying.collectAsState()
     val currentPositionMs by viewModel.currentPositionMs.collectAsState()
     val currentTrackIndex by viewModel.currentTrackIndex.collectAsState()
+    val chapters by viewModel.chapters.collectAsState()
+    val currentChapter by viewModel.currentChapter.collectAsState()
     val trackCount by viewModel.trackCount.collectAsState()
     val durationMs by viewModel.durationMs.collectAsState()
     val skipBackSeconds by viewModel.skipBackSeconds.collectAsState()
@@ -132,6 +134,7 @@ fun AudiobookApp(
             AppScreen.LIBRARY -> {
                 LibraryScreen(
                     audiobooks = audiobooks,
+                    chapterTitle = chapters?.takeIf { it.navigable }?.chapters?.getOrNull(currentChapter)?.title,
                     libraryVersion = libraryVersion,
                     sort = librarySort,
                     filter = libraryFilter,
@@ -182,9 +185,11 @@ fun AudiobookApp(
                         onSetSmartRewindEnabled = viewModel::setSmartRewindEnabled,
                         onSetSleepFadeOut = viewModel::setSleepFadeOut,
                         onExtendSleepTimer = viewModel::extendSleepTimer,
-                        onJumpToTrack = { viewModel.jumpToTrack(context, it) },
-                        onPreviousTrack = viewModel::previousTrack,
-                        onNextTrack = viewModel::nextTrack,
+                        chapters = chapters,
+                        currentChapter = currentChapter,
+                        onJumpToChapter = viewModel::jumpToChapter,
+                        onPrevious = viewModel::previous,
+                        onNext = viewModel::next,
                         onSeek = { pos -> viewModel.seekTo(pos) },
                         onSkipBackward15s = { viewModel.skipBackward() },
                         onSkipBackward1m = { viewModel.skipBackward1m() },

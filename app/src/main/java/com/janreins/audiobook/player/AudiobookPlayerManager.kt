@@ -16,6 +16,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import com.janreins.audiobook.data.ChapterRepository
 import com.janreins.audiobook.data.LibraryStateStore
 import com.janreins.audiobook.data.PreferencesManager
 import com.janreins.audiobook.data.model.AudioTrack
@@ -56,6 +57,20 @@ object AudiobookPlayerManager {
     val currentTrackIndex = _currentTrackIndex.asStateFlow()
     private val _trackCount = MutableStateFlow(1)
     val trackCount = _trackCount.asStateFlow()
+
+    private val _chapters = MutableStateFlow<ChapterIndex?>(null)
+    val chapters: StateFlow<ChapterIndex?> = _chapters.asStateFlow()
+    private val _currentChapter = MutableStateFlow(0)
+    val currentChapter: StateFlow<Int> = _currentChapter.asStateFlow()
+
+    init {
+        scope.launch {
+            ChapterRepository.indexes.collect {
+                _chapters.value = _currentBook.value?.id?.let(it::get)
+                _currentChapter.value = _chapters.value?.indexAt(_currentTrackIndex.value, _currentPositionMs.value) ?: 0
+            }
+        }
+    }
 
     private fun bookId(item: MediaItem?) = item?.mediaId?.substringBeforeLast("#")
 
@@ -236,6 +251,7 @@ object AudiobookPlayerManager {
     fun playBook(context: Context, book: Audiobook, customStartPosMs: Long? = null,
                  customTrackIndex: Int? = null) {
         initialize(context)
+        ChapterRepository.ensureLoaded(book)
         knownBooks[book.id] = book
         _errorMessage.value = null
         withController { player ->
@@ -268,6 +284,8 @@ object AudiobookPlayerManager {
             val start = PlaybackPositions.resumePosition(position, tracks[index].durationMs)
             if (sameBook) {
                 _currentBook.value = book
+                _chapters.value = ChapterRepository.indexes.value[book.id]
+                _currentChapter.value = _chapters.value?.indexAt(player.currentMediaItemIndex, player.currentPosition) ?: 0
                 if (restartFinished || customStartPosMs != null || customTrackIndex != null) {
                     player.seekTo(index, start)
                     updatePosition(player)
@@ -278,6 +296,8 @@ object AudiobookPlayerManager {
             } else {
                 saveCurrentPosition()
                 _currentBook.value = book
+                _chapters.value = ChapterRepository.indexes.value[book.id]
+                _currentChapter.value = _chapters.value?.indexAt(index, start) ?: 0
                 // Book change: let the library re-sort (it does not re-sort on routine progress saves).
                 libraryStateStore?.notifyProgressChanged()
                 _currentTrackIndex.value = index
@@ -306,8 +326,29 @@ object AudiobookPlayerManager {
         }
     }
 
-    fun previousTrack() = withController { it.seekToPreviousMediaItem() }
-    fun nextTrack() = withController { it.seekToNextMediaItem() }
+    fun previous() = navigateChapter(forward = false)
+    fun next() = navigateChapter(forward = true)
+
+    /** Same rules as the notification/headset (SessionPlayer), as a direct seek so the saved position is exact. */
+    private fun navigateChapter(forward: Boolean) = withController { player ->
+        val index = _currentBook.value?.id?.takeIf { it == bookId(player.currentMediaItem) }
+            ?.let { ChapterRepository.indexes.value[it] }
+        if (!ChapterNavigation.seek(player, index, forward)) return@withController
+        updatePosition(player)
+        persistPosition()
+    }
+    /** Plays from the chapter's exact start (playBook's resume rules would move starts near a file's end to 0). */
+    fun jumpToChapter(chapter: BookChapter) {
+        val book = _currentBook.value ?: return
+        withController { player ->
+            if (bookId(player.currentMediaItem) == book.id && chapter.trackIndex < player.mediaItemCount) {
+                player.seekTo(chapter.trackIndex, chapter.startMs)
+                updatePosition(player)
+                persistPosition()
+                player.play()
+            } else appContext?.let { playBook(it, book, chapter.startMs, chapter.trackIndex) }
+        }
+    }
 
     fun togglePlayPause(context: Context? = null) {
         if (context != null) initialize(context)
@@ -417,6 +458,7 @@ object AudiobookPlayerManager {
     }
 
     private fun updatePosition(player: Player) {
+        _chapters.value = _currentBook.value?.id?.let { ChapterRepository.indexes.value[it] }
         if (bookId(player.currentMediaItem) != _currentBook.value?.id || player.currentMediaItem == null) return
         _currentTrackIndex.value = if (player.playbackState == Player.STATE_ENDED) {
             (_currentBook.value?.trackCount ?: player.mediaItemCount).coerceAtLeast(1) - 1
@@ -428,6 +470,7 @@ object AudiobookPlayerManager {
         _currentPositionMs.value = if (player.playbackState == Player.STATE_ENDED) {
             PlaybackPositions.positionAfterCompletion(_durationMs.value)
         } else player.currentPosition.coerceAtLeast(0L)
+        _currentChapter.value = _chapters.value?.indexAt(_currentTrackIndex.value, _currentPositionMs.value) ?: 0
     }
 
     /**

@@ -19,7 +19,7 @@ object BookGrouping {
             if (first.isInRoot) cleanFileName(first.name) else cleanTitle(first.parentName.orEmpty()),
             if (tracks.size == 1) first.name else "${tracks.size} files",
             duration, tracks.sumOf { it.sizeBytes }, AudiobookRepository.formatDuration(duration), tracks,
-            cover?.folderCoverUri, cover?.folderCoverKey)
+            cover?.folderCoverUri, cover?.folderCoverKey, first.lastModified)
     }.sortedWith(compareBy(NaturalStringComparator) { it.title })
 
     private fun cleanTitle(name: String) = name.replace('_', ' ').trim()

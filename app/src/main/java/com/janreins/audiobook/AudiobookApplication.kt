@@ -6,11 +6,17 @@ import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.memory.MemoryCache
 import coil3.request.crossfade
+import com.janreins.audiobook.data.ChapterRepository
 import com.janreins.audiobook.data.CoverStore
 import com.janreins.audiobook.ui.components.CoverFetcher
 import com.janreins.audiobook.ui.components.CoverKeyer
 
 class AudiobookApplication : Application(), SingletonImageLoader.Factory {
+    override fun onCreate() {
+        super.onCreate()
+        ChapterRepository.init(this)
+    }
+
     override fun newImageLoader(context: Context): ImageLoader = ImageLoader.Builder(context)
         .components {
             add(CoverKeyer())

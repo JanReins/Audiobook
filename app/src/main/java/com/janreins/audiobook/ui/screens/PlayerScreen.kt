@@ -31,6 +31,10 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import com.janreins.audiobook.player.BookChapter
+import com.janreins.audiobook.player.ChapterIndex
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ModalBottomSheet
@@ -114,8 +118,8 @@ fun PlayerScreen(
     modifier: Modifier = Modifier,
     currentTrackIndex: Int = 0,
     trackCount: Int = 1,
-    onPreviousTrack: () -> Unit = {},
-    onNextTrack: () -> Unit = {},
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {},
     skipBackSeconds: Int = 15,
     skipForwardSeconds: Int = 30,
     smartRewindEnabled: Boolean = true,
@@ -125,14 +129,17 @@ fun PlayerScreen(
     onSetSmartRewindEnabled: (Boolean) -> Unit = {},
     onSetSleepFadeOut: (Boolean) -> Unit = {},
     onExtendSleepTimer: () -> Unit = {},
-    onJumpToTrack: (Int) -> Unit = {}
+    chapters: ChapterIndex? = null,
+    currentChapter: Int = 0,
+    onJumpToChapter: (BookChapter) -> Unit = {}
 ) {
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showAddBookmarkDialog by remember { mutableStateOf(false) }
     var showBookmarksSheet by remember { mutableStateOf(false) }
     var showSpeedMenu by remember { mutableStateOf(false) }
     var showPlaybackSettings by remember { mutableStateOf(false) }
-    var showTrackList by remember(audiobook.id) { mutableStateOf(false) }
+    var showChapterList by remember(audiobook.id) { mutableStateOf(false) }
+    val chapterListState = rememberLazyListState()
     var showThemeDialog by remember { mutableStateOf(false) }
 
     if (showThemeDialog) {
@@ -334,15 +341,22 @@ fun PlayerScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
-                if (trackCount > 1) {
+                if (chapters?.navigable == true) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Track ${currentTrackIndex + 1} of $trackCount",
+                        Text(chapters.chapters.getOrNull(currentChapter)?.title.orEmpty(),
+                            modifier = Modifier.weight(1f, fill = false),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        IconButton(onClick = { showTrackList = true }) {
-                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Track list")
+                        IconButton(onClick = { showChapterList = true }) {
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Chapters")
                         }
                     }
+                }
+                if (trackCount > 1) {
+                    Text("Track ${currentTrackIndex + 1} of $trackCount",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -369,13 +383,14 @@ fun PlayerScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            if (trackCount > 1) {
+            if (chapters?.navigable == true) {
                 Row(horizontalArrangement = Arrangement.Center) {
-                    IconButton(onClick = onPreviousTrack, enabled = currentTrackIndex > 0) {
-                        Icon(Icons.Default.SkipPrevious, contentDescription = "Previous track")
+                    val chapter = chapters.chapters.getOrNull(currentChapter)
+                    IconButton(onClick = onPrevious, enabled = currentChapter > 0 || currentPositionMs > (chapter?.startMs ?: 0L)) {
+                        Icon(Icons.Default.SkipPrevious, contentDescription = "Previous chapter")
                     }
-                    IconButton(onClick = onNextTrack, enabled = currentTrackIndex < trackCount - 1) {
-                        Icon(Icons.Default.SkipNext, contentDescription = "Next track")
+                    IconButton(onClick = onNext, enabled = currentChapter < chapters.chapters.lastIndex) {
+                        Icon(Icons.Default.SkipNext, contentDescription = "Next chapter")
                     }
                 }
             }
@@ -548,20 +563,23 @@ fun PlayerScreen(
             onSetSkipBackSeconds, onSetSkipForwardSeconds, onSetSmartRewindEnabled, onSetSleepFadeOut,
             onDismiss = { showPlaybackSettings = false })
     }
-    if (showTrackList && trackCount > 1) {
-        ModalBottomSheet(onDismissRequest = { showTrackList = false }) {
-            Text("Tracks", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(24.dp))
-            LazyColumn(Modifier.fillMaxWidth()) {
-                itemsIndexed(audiobook.tracks, key = { index, _ -> index }) { index, track ->
-                    val current = index == currentTrackIndex
+    if (showChapterList && chapters?.navigable == true) {
+        LaunchedEffect(Unit) { chapterListState.scrollToItem(currentChapter.coerceIn(chapters.chapters.indices)) }
+        ModalBottomSheet(onDismissRequest = { showChapterList = false }) {
+            Text("Chapters", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(24.dp))
+            LazyColumn(Modifier.fillMaxWidth(), state = chapterListState) {
+                itemsIndexed(chapters.chapters, key = { index, _ -> index }) { index, chapter ->
+                    val current = index == currentChapter
                     Row(Modifier.fillMaxWidth()
                         .background(if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-                        .clickable { onJumpToTrack(index); showTrackList = false }
+                        .clickable { onJumpToChapter(chapter); showChapterList = false }
                         .padding(horizontal = 24.dp, vertical = 16.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        Text("${index + 1}. ${track.title}", modifier = Modifier.weight(1f),
+                        Text(chapter.title, modifier = Modifier.weight(1f),
                             fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
-                        Text(AudiobookRepository.formatDuration(track.durationMs),
+                        val start = audiobook.tracks.take(chapter.trackIndex).sumOf { it.durationMs } + chapter.startMs
+                        val duration = if (chapter.endMs < 0) "--:--" else AudiobookRepository.formatDuration(chapter.endMs - chapter.startMs)
+                        Text("${AudiobookRepository.formatDuration(start)} • $duration",
                             modifier = Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall)
                     }
                 }
