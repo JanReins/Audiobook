@@ -289,9 +289,13 @@ object AudiobookPlayerManager {
                     MediaItem.Builder().setUri(track.uri).setMediaId("${book.id}#$trackIndex")
                         .setMediaMetadata(MediaMetadata.Builder().setTitle(track.title)
                             .setArtist("Audiobook").setAlbumTitle(book.title)
-                            .setExtras(Bundle().apply { putString(CoverBitmapLoader.EXTRA_BOOK_ID, book.id) })
-                            // Folder cover only; embedded art arrives as artworkData and takes precedence.
-                            .apply { book.coverUri?.let { setArtworkUri(it) } }.build()).build()
+                            // The folder cover goes in extras, not artworkUri: MediaSession always wraps the
+                            // loader in CacheBitmapLoader, which matches on URI *or* data and would keep the
+                            // folder bitmap after the embedded art (artworkData) arrives.
+                            .setExtras(Bundle().apply {
+                                putString(CoverBitmapLoader.EXTRA_BOOK_ID, book.id)
+                                book.coverUri?.let { putString(CoverBitmapLoader.EXTRA_FOLDER_COVER_URI, it.toString()) }
+                            }).build()).build()
                 }
                 player.setMediaItems(items, index, start)
                 player.prepare()
