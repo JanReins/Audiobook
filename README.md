@@ -44,14 +44,9 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
    - Seamlessly resumes right where you left off when you open a book again.
    - Stored 100% privately on your device using Android SharedPreferences.
 
-6. **Background Playback & 5-Button Notification Controls**
-   - Keeps playing seamlessly in the background when your screen is locked or when using other apps.
-   - Media style notification with **5 quick playback actions**:
-     - Rewind 1 minute (`-1m`)
-     - Rewind 15 seconds (`-15s`)
-     - Play / Pause toggle
-     - Fast forward 15 seconds (`+15s`)
-     - Fast forward 1 minute (`+1m`)
+6. **Background Playback & Media3 Media Controls**
+   - Background playback with notification and lock-screen controls for play/pause, ±15 seconds and -1m/+1m (button visibility depends on Android/device).
+   - Supports headset/Bluetooth media buttons and auto-pauses on headphone disconnect and calls.
 
 7. **100% Private & Pure Offline**
    - Zero internet permissions in the Android Manifest.
