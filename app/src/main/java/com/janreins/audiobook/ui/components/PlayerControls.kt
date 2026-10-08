@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.sp
 
 /**
  * Clean Minimalism Playback controls:
- * - 4 sleek skip buttons: -1m, -15s, +15s, +1m with icons and compact tags
+ * - 4 skip buttons with configurable inner intervals, icons, and compact tags
  * - 72dp prominent center Play / Pause button
  */
 @Composable
@@ -47,6 +47,8 @@ fun PlayerControls(
     onSkipBackward1m: () -> Unit,
     onSkipForward15s: () -> Unit,
     onSkipForward1m: () -> Unit,
+    skipBackSeconds: Int = 15,
+    skipForwardSeconds: Int = 30,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -65,9 +67,9 @@ fun PlayerControls(
             onClick = onSkipBackward1m
         )
 
-        // Skip -15 Seconds
+        // Configured skip back
         MinimalSkipButton(
-            tag = "15s",
+            tag = "-${skipBackSeconds}s",
             isRewind = true,
             isLong = false,
             testTag = "skip_backward_15s_button",
@@ -102,9 +104,9 @@ fun PlayerControls(
             }
         }
 
-        // Skip +15 Seconds
+        // Configured skip forward
         MinimalSkipButton(
-            tag = "15s",
+            tag = "+${skipForwardSeconds}s",
             isRewind = false,
             isLong = false,
             testTag = "skip_forward_15s_button",

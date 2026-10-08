@@ -29,11 +29,13 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
    - **4 Skip Controls**:
      - Rewind 1 minute (`-1m`)
      - Rewind 15 seconds (`-15s`)
-     - Fast forward 15 seconds (`+15s`)
+     - Fast forward 30 seconds (`+30s`)
      - Fast forward 1 minute (`+1m`)
-   - Previous/next track buttons and a track counter for multi-file books. The seek bar and skip controls operate within the current track.
-   - **Playback Speed Selector**: 0.75x, 1.0x, 1.25x, and 1.5x speeds.
-   - **Sleep Timer**: Choose 15, 30, 45, or 60 minutes. Shows a live countdown badge and automatically pauses audio when time is up.
+   - Configurable inner skip intervals: 5, 10, 15, 30, 45, or 60 seconds (defaults: back 15, forward 30).
+   - Previous/next track buttons, a track counter, and a track list with titles and durations for multi-file books. Tap a track to play from its start. The seek bar and skip controls operate within the current track.
+   - **Playback Speed Selector**: 0.5x–3x in 0.05x steps, with a slider, presets, and reset.
+   - **Sleep Timer**: Choose 5, 10, 15, 30, 45, 60, or 90 minutes, or end of track. Live countdown, +5 minute extension, and optional fade-out over the last 30 seconds (enabled by default).
+   - **Playback settings**: Adjust skip intervals, smart rewind, and sleep fade-out from the player gear button. Smart rewind is enabled by default: resumes within the current track by 0/2/5/10/20 seconds depending on pause length.
 
 4. **Bookmarks**
    - Save your exact position at any moment with a custom or auto-generated note.
@@ -46,8 +48,8 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
    - Stored 100% privately on your device using Android SharedPreferences.
 
 6. **Background Playback & Media3 Media Controls**
-   - Background playback with notification and lock-screen controls for play/pause, ±15 seconds and -1m/+1m (button visibility depends on Android/device).
-   - Supports headset/Bluetooth media buttons and auto-pauses on headphone disconnect and calls.
+   - Background playback with notification and lock-screen controls for play/pause, configured skip intervals and -1m/+1m (button visibility depends on Android/device).
+   - Supports headset/Bluetooth media buttons and auto-pauses on headphone disconnect and calls. For single-file books, the headset's next/previous keys skip forward/back by the configured intervals (instead of restarting the file); multi-file books keep next/previous track. Fast-forward/rewind keys always use the configured intervals.
 
 7. **100% Private & Pure Offline**
    - Zero internet permissions in the Android Manifest.

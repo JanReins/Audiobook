@@ -30,14 +30,21 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.ModalBottomSheet
+import com.janreins.audiobook.data.AudiobookRepository
+import com.janreins.audiobook.player.SpeedSteps
+import com.janreins.audiobook.ui.components.PlaybackSpeedDialog
+import com.janreins.audiobook.ui.components.PlaybackSettingsDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -109,12 +116,24 @@ fun PlayerScreen(
     currentTrackIndex: Int = 0,
     trackCount: Int = 1,
     onPreviousTrack: () -> Unit = {},
-    onNextTrack: () -> Unit = {}
+    onNextTrack: () -> Unit = {},
+    skipBackSeconds: Int = 15,
+    skipForwardSeconds: Int = 30,
+    smartRewindEnabled: Boolean = true,
+    sleepFadeOut: Boolean = true,
+    onSetSkipBackSeconds: (Int) -> Unit = {},
+    onSetSkipForwardSeconds: (Int) -> Unit = {},
+    onSetSmartRewindEnabled: (Boolean) -> Unit = {},
+    onSetSleepFadeOut: (Boolean) -> Unit = {},
+    onExtendSleepTimer: () -> Unit = {},
+    onJumpToTrack: (Int) -> Unit = {}
 ) {
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showAddBookmarkDialog by remember { mutableStateOf(false) }
     var showBookmarksSheet by remember { mutableStateOf(false) }
     var showSpeedMenu by remember { mutableStateOf(false) }
+    var showPlaybackSettings by remember { mutableStateOf(false) }
+    var showTrackList by remember(audiobook.id) { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
 
     if (showThemeDialog) {
@@ -163,6 +182,9 @@ fun PlayerScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showPlaybackSettings = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Playback settings")
+                    }
                     // Theme selector button
                     IconButton(
                         onClick = { showThemeDialog = true },
@@ -337,9 +359,14 @@ fun PlayerScreen(
                 )
 
                 if (trackCount > 1) {
-                    Text("Track ${currentTrackIndex + 1} of $trackCount",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Track ${currentTrackIndex + 1} of $trackCount",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = { showTrackList = true }) {
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Track list")
+                        }
+                    }
                 }
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -377,14 +404,16 @@ fun PlayerScreen(
                 }
             }
 
-            // Playback Controls (-1m, -15s, Play/Pause, +15s, +1m)
+            // Playback controls with configured inner skip intervals
             PlayerControls(
                 isPlaying = isPlaying,
                 onTogglePlayPause = onTogglePlayPause,
                 onSkipBackward15s = onSkipBackward15s,
                 onSkipBackward1m = onSkipBackward1m,
                 onSkipForward15s = onSkipForward15s,
-                onSkipForward1m = onSkipForward1m
+                onSkipForward1m = onSkipForward1m,
+                skipBackSeconds = skipBackSeconds,
+                skipForwardSeconds = skipForwardSeconds
             )
 
             Spacer(modifier = Modifier.height(28.dp))
@@ -417,7 +446,7 @@ fun PlayerScreen(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                text = "${playbackSpeed}x",
+                                text = SpeedSteps.format(playbackSpeed),
                                 style = MaterialTheme.typography.bodyMedium.copy(
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 13.sp
@@ -434,28 +463,6 @@ fun PlayerScreen(
                                 ),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
-                        }
-
-                        DropdownMenu(
-                            expanded = showSpeedMenu,
-                            onDismissRequest = { showSpeedMenu = false }
-                        ) {
-                            val speeds = listOf(0.75f, 1.0f, 1.25f, 1.5f)
-                            speeds.forEach { speed ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = "${speed}x",
-                                            fontWeight = if (kotlin.math.abs(playbackSpeed - speed) < 0.05f) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (kotlin.math.abs(playbackSpeed - speed) < 0.05f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    },
-                                    onClick = {
-                                        onSetPlaybackSpeed(speed)
-                                        showSpeedMenu = false
-                                    }
-                                )
-                            }
                         }
                     }
 
@@ -488,6 +495,9 @@ fun PlayerScreen(
                                 ),
                                 color = MaterialTheme.colorScheme.primary
                             )
+                        } else if (activeSleepOption == SleepTimerOption.END_OF_TRACK) {
+                            Text("End of track", style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary)
                         } else {
                             Icon(
                                 imageVector = Icons.Default.Bedtime,
@@ -554,6 +564,34 @@ fun PlayerScreen(
     }
 
     // --- Dialogs & Sheets ---
+    if (showSpeedMenu) {
+        PlaybackSpeedDialog(playbackSpeed, onSetPlaybackSpeed, onDismiss = { showSpeedMenu = false })
+    }
+    if (showPlaybackSettings) {
+        PlaybackSettingsDialog(skipBackSeconds, skipForwardSeconds, smartRewindEnabled, sleepFadeOut,
+            onSetSkipBackSeconds, onSetSkipForwardSeconds, onSetSmartRewindEnabled, onSetSleepFadeOut,
+            onDismiss = { showPlaybackSettings = false })
+    }
+    if (showTrackList && trackCount > 1) {
+        ModalBottomSheet(onDismissRequest = { showTrackList = false }) {
+            Text("Tracks", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(24.dp))
+            LazyColumn(Modifier.fillMaxWidth()) {
+                itemsIndexed(audiobook.tracks, key = { index, _ -> index }) { index, track ->
+                    val current = index == currentTrackIndex
+                    Row(Modifier.fillMaxWidth()
+                        .background(if (current) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                        .clickable { onJumpToTrack(index); showTrackList = false }
+                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("${index + 1}. ${track.title}", modifier = Modifier.weight(1f),
+                            fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
+                        Text(AudiobookRepository.formatDuration(track.durationMs),
+                            modifier = Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
     if (showAddBookmarkDialog) {
         AddBookmarkDialog(
             currentPositionMs = currentPositionMs,
@@ -576,7 +614,10 @@ fun PlayerScreen(
             currentOption = activeSleepOption,
             remainingSeconds = sleepTimerRemainingSeconds,
             onDismiss = { showSleepTimerDialog = false },
-            onSelectOption = onSetSleepTimer
+            onSelectOption = onSetSleepTimer,
+            fadeOut = sleepFadeOut,
+            onSetFadeOut = onSetSleepFadeOut,
+            onExtend = onExtendSleepTimer
         )
     }
 }
