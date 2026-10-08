@@ -24,31 +24,45 @@ class CoverBitmapLoader(context: Context) : BitmapLoader {
     override fun supportsMimeType(mimeType: String): Boolean = mimeType.startsWith("image/", ignoreCase = true)
 
     override fun decodeBitmap(data: ByteArray): ListenableFuture<Bitmap> = executor.submit(Callable {
-        BitmapDecoding.decodeDownsampled(data, 512) ?: throw IOException("Cannot decode cover")
+        BitmapDecoding.decodeDownsampled(data, MAX_PX) ?: throw IOException("Cannot decode cover")
     })
 
     override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> = executor.submit(Callable {
-        BitmapDecoding.decodeDownsampled(context, uri, 512) ?: throw IOException("Cannot decode cover: $uri")
+        BitmapDecoding.decodeDownsampled(context, uri, MAX_PX) ?: throw IOException("Cannot decode cover: $uri")
     })
 
+    /**
+     * The notification asks again on every player change, so the last result is reused. The key follows
+     * every input (embedded bytes, folder URI, placeholder id), and embedded bytes win over the folder URI,
+     * so when embedded art arrives after a URI-only request it replaces the folder cover. (Media3's
+     * CacheBitmapLoader would reuse the folder bitmap there because the URI still matches.)
+     */
     override fun loadBitmapFromMetadata(metadata: MediaMetadata): ListenableFuture<Bitmap> {
-        metadata.artworkData?.let { return decodeBitmap(it) }
-        metadata.artworkUri?.let { return loadBitmap(it) }
+        val data = metadata.artworkData
+        val uri = metadata.artworkUri
         val title = (metadata.albumTitle ?: metadata.title ?: "?").toString()
         // Same colour as the in-app placeholder, which is keyed by book id.
         val bookId = metadata.extras?.getString(EXTRA_BOOK_ID) ?: title
-        val key = "$bookId|$title"
-        // The notification asks again on every state change; reuse the last placeholder for the same book.
-        lastPlaceholder?.let { (cachedKey, future) -> if (cachedKey == key) return future }
-        return executor.submit(Callable { CoverPlaceholders.placeholderBitmap(title, bookId, 512) })
-            .also { lastPlaceholder = key to it }
+        // Every input of the fallback chain is in the key, so any change (e.g. embedded bytes arriving) misses.
+        val key = "${data?.let { "${it.size}:${it.contentHashCode()}" }}|$uri|$bookId|$title"
+        last?.let { (cachedKey, future) -> if (cachedKey == key) return future }
+        val future = executor.submit(Callable {
+            // Fall back down the chain, so a broken embedded image or folder file still shows something.
+            data?.let { BitmapDecoding.decodeDownsampled(it, MAX_PX) }
+                ?: uri?.let { runCatching { BitmapDecoding.decodeDownsampled(context, it, MAX_PX) }.getOrNull() }
+                ?: CoverPlaceholders.placeholderBitmap(title, bookId, MAX_PX)
+        })
+        last = key to future
+        return future
     }
 
-    private var lastPlaceholder: Pair<String, ListenableFuture<Bitmap>>? = null
+    /** Only touched on the session's application thread. */
+    private var last: Pair<String, ListenableFuture<Bitmap>>? = null
 
     companion object {
         /** MediaMetadata extra carrying the book id, so the placeholder colour matches the app. */
         const val EXTRA_BOOK_ID = "com.janreins.audiobook.BOOK_ID"
+        private const val MAX_PX = 512
     }
 
     fun release() { executor.shutdownNow() }

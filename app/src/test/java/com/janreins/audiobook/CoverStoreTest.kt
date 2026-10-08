@@ -146,15 +146,52 @@ class CoverStoreTest {
         assertNotNull(store.thumbnailFile(source))
     }
 
-    @Test fun cachePrunesOldestEntriesTo300() = runBlocking {
+    @Test fun trimCapsThumbnailsAndMarkersSeparatelyAndKeepsRecentFiles() = runBlocking {
         assertTrue(cache.mkdirs())
-        repeat(400) { index ->
+        val now = System.currentTimeMillis()
+        repeat(CoverStore.MAX_THUMBNAILS + 1) { index ->
+            File(cache, "old$index.jpg").apply { writeText("x"); setLastModified(index + 1L) }
+        }
+        repeat(5) { index -> File(cache, "recent$index.jpg").apply { writeText("x"); setLastModified(now) } }
+        repeat(CoverStore.MAX_MARKERS + 1) { index ->
             File(cache, "old$index.none").apply { writeText(""); setLastModified(index + 1L) }
         }
         assertNull(CoverStore(context) { null }.thumbnailFile(model))
-        assertEquals(300, cache.listFiles().orEmpty().size)
-        assertFalse(File(cache, "old0.none").exists())
-        assertTrue(File(cache, "old399.none").exists())
+        val files = cache.listFiles().orEmpty()
+        assertEquals(CoverStore.TRIM_THUMBNAILS_TO, files.count { it.extension == "jpg" })
+        assertEquals(CoverStore.TRIM_MARKERS_TO, files.count { it.extension == "none" })
+        assertFalse(File(cache, "old0.jpg").exists())
+        assertTrue(File(cache, "old${CoverStore.MAX_THUMBNAILS}.jpg").exists())
+        assertTrue((0 until 5).all { File(cache, "recent$it.jpg").exists() })
+        // The marker just written for this model is recent, so it survives.
+        assertNull(CoverStore(context) { error("must not read again") }.thumbnailFile(model))
+    }
+
+    @Test fun cacheHitRefreshesTimestampForLeastRecentlyUsedTrim() = runBlocking {
+        val store = CoverStore(context) { image(Color.RED) }
+        val file = requireNotNull(store.thumbnailFile(model))
+        assertTrue(file.setLastModified(1000L))
+        assertEquals(file, store.thumbnailFile(model))
+        assertTrue(file.lastModified() > 1000L)
+    }
+
+    @Test fun failedEmbeddedReadWritesNoMarkerAndRetriesOnNextLaunch() = runBlocking {
+        var calls = 0
+        val store = CoverStore(context) { calls++; throw java.io.IOException("transient") }
+        assertNull(store.thumbnailFile(model))
+        assertTrue(cache.listFiles().orEmpty().none { it.extension == "none" })
+        // Same process: not re-read on every request.
+        assertNull(store.thumbnailFile(model))
+        assertEquals(1, calls)
+        // Next launch (new store): read again, and a successful "no picture" result is then remembered.
+        assertNull(CoverStore(context) { calls++; null }.thumbnailFile(model))
+        assertEquals(2, calls)
+        assertEquals(1, cache.listFiles().orEmpty().count { it.extension == "none" })
+    }
+
+    @Test fun failedEmbeddedReadStillUsesFolderCover() = runBlocking {
+        val store = CoverStore(context) { throw java.io.IOException("unsupported") }
+        assertColor(requireNotNull(store.thumbnailFile(folderModel())), 0, 255)
     }
 
     @Test fun modelUsesFirstTrackSizeAndTimestampWithLegacyFallback() {

@@ -15,7 +15,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
-import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.DefaultMediaNotificationProvider
 import com.janreins.audiobook.R
 import androidx.media3.session.MediaSessionService
@@ -100,7 +99,9 @@ class PlaybackService : MediaSessionService() {
         )
         val coverLoader = CoverBitmapLoader(this).also { coverBitmapLoader = it }
         session = MediaSession.Builder(this, sessionPlayer)
-            .setBitmapLoader(CacheBitmapLoader(coverLoader))
+            // No CacheBitmapLoader: it matches on URI *or* data, so it would keep showing the folder
+            // cover after embedded art arrives. CoverBitmapLoader keeps its own one-entry cache.
+            .setBitmapLoader(coverLoader)
             .setSessionActivity(activity)
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(

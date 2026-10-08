@@ -31,17 +31,23 @@ fun Audiobook.coverModel(): CoverModel {
         coverUri, coverKey)
 }
 
+/**
+ * [embeddedArtReader] returns null only when the file was read and has no embedded picture; it throws
+ * when the file could not be read, so a transient failure never records "no art".
+ */
 class CoverStore(
     context: Context,
     private val embeddedArtReader: (Uri) -> ByteArray? = { uri -> readEmbeddedArt(context, uri) }
 ) {
     private val context = context.applicationContext
     private val cacheDirectory = File(context.cacheDir, "covers")
+    /** Keys whose embedded read failed in this process: retried on the next launch, not on every scroll. */
+    private val failedEmbeddedReads = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     suspend fun thumbnailFile(model: CoverModel): File? = withContext(Dispatchers.IO) {
         // Fast path without the lock: cache hits and remembered "no art" never wait behind an extraction.
         val key = hashOf(cacheKey(model))
-        File(cacheDirectory, "$key.jpg").takeIf { it.isFile }?.let { return@withContext it }
+        File(cacheDirectory, "$key.jpg").takeIf { it.isFile }?.let { return@withContext touched(it) }
         if (File(cacheDirectory, "$key.none").isFile) return@withContext null
         // Serialize cache writes and pruning, including simultaneous requests for the same book.
         cacheMutex.withLock {
@@ -52,15 +58,29 @@ class CoverStore(
                 val hash = key
                 val image = File(cacheDirectory, "$hash.jpg")
                 val none = File(cacheDirectory, "$hash.none")
-                if (image.isFile) return@withLock image
+                if (image.isFile) return@withLock touched(image)
                 if (none.isFile) return@withLock null
 
-                bitmap = embeddedArtReader(model.firstTrackUri)?.let { decodeDownsampled(it, 512) }
+                var embeddedReadFailed = hash in failedEmbeddedReads
+                if (!embeddedReadFailed) {
+                    val embedded = try {
+                        embeddedArtReader(model.firstTrackUri)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        failedEmbeddedReads += hash
+                        embeddedReadFailed = true
+                        null
+                    }
+                    bitmap = embedded?.let { decodeDownsampled(it, 512) }
+                }
                 if (bitmap == null) {
                     bitmap = model.folderCoverUri?.let { decodeDownsampled(it, 512) }
                 }
                 if (bitmap == null) {
-                    // An unreadable folder stream throws; it must remain retryable, without a marker.
+                    // Only a successful read that found nothing is remembered. A failed audio read or an
+                    // unreadable folder stream (which throws) stays retryable, without a marker.
+                    if (embeddedReadFailed) return@withLock null
                     temp = File.createTempFile(hash, ".tmp", cacheDirectory)
                     check(temp.renameTo(none))
                     trimCache()
@@ -87,26 +107,49 @@ class CoverStore(
     fun decodeDownsampled(bytes: ByteArray, maxPx: Int): Bitmap? = BitmapDecoding.decodeDownsampled(bytes, maxPx)
     fun decodeDownsampled(uri: Uri, maxPx: Int): Bitmap? = BitmapDecoding.decodeDownsampled(context, uri, maxPx)
 
+    /** Cache hits refresh the timestamp (at most hourly), so trimming drops the least recently used. */
+    private fun touched(file: File): File {
+        val now = System.currentTimeMillis()
+        if (now - file.lastModified() > TOUCH_INTERVAL_MS) file.setLastModified(now)
+        return file
+    }
+
+    /**
+     * Thumbnails (~30-60 KB) and the empty "no art" markers are capped separately. Files used in the last
+     * few minutes are never deleted, so a path just handed to Coil stays valid.
+     */
     private fun trimCache() {
         val files = cacheDirectory.listFiles()?.filter { it.isFile } ?: return
-        if (files.size > 400) files.sortedBy { it.lastModified() }.take(files.size - 300).forEach { it.delete() }
+        val recent = System.currentTimeMillis() - KEEP_RECENT_MS
+        fun trim(entries: List<File>, max: Int, target: Int) {
+            if (entries.size <= max) return
+            entries.filter { it.lastModified() < recent }.sortedBy { it.lastModified() }
+                .take(entries.size - target).forEach { it.delete() }
+        }
+        trim(files.filter { it.extension == "jpg" }, MAX_THUMBNAILS, TRIM_THUMBNAILS_TO)
+        trim(files.filter { it.extension == "none" }, MAX_MARKERS, TRIM_MARKERS_TO)
     }
 
     companion object {
         private val cacheMutex = Mutex()
+        internal const val MAX_THUMBNAILS = 600
+        internal const val TRIM_THUMBNAILS_TO = 500
+        internal const val MAX_MARKERS = 2000
+        internal const val TRIM_MARKERS_TO = 1500
+        private const val KEEP_RECENT_MS = 10 * 60_000L
+        private const val TOUCH_INTERVAL_MS = 60 * 60_000L
         fun cacheKey(model: CoverModel): String = "v1|${model.firstTrackKey}|${model.folderCoverKey ?: "-"}"
 
         private fun hashOf(key: String): String = MessageDigest.getInstance("SHA-1")
             .digest(key.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
+        /** Throws if the file cannot be opened or parsed; null means it has no embedded picture. */
         private fun readEmbeddedArt(context: Context, uri: Uri): ByteArray? {
             var retriever: MediaMetadataRetriever? = null
             return try {
                 retriever = MediaMetadataRetriever()
                 retriever.setDataSource(context, uri)
                 retriever.embeddedPicture
-            } catch (_: Exception) {
-                null
             } finally {
                 try { retriever?.release() } catch (_: Exception) { /* Ignore cleanup errors. */ }
             }
