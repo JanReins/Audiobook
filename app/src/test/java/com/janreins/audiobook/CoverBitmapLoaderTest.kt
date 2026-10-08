@@ -67,4 +67,28 @@ class CoverBitmapLoaderTest {
         // The notification re-requests on every state change; the same book reuses the placeholder.
         assertTrue(loader.loadBitmapFromMetadata(metadata) === loader.loadBitmapFromMetadata(metadata))
     }
+
+    @Test fun embeddedArtArrivingAfterAUriOnlyRequestReplacesTheFolderCover() {
+        // Kiln's repro: the MediaItem (folder URI only) is shown first; the extractor's embedded art follows.
+        val folder = android.net.Uri.fromFile(temporaryFolder.newFile("folder.jpg").apply { writeBytes(jpeg(Color.BLUE, 64, 64)) })
+        val first = loader.loadBitmapFromMetadata(MediaMetadata.Builder().setArtworkUri(folder).build())!!
+            .get(5, TimeUnit.SECONDS).getPixel(32, 32)
+        assertTrue(Color.blue(first) > 200)
+        val withEmbedded = MediaMetadata.Builder().setArtworkUri(folder).setArtworkData(jpeg(Color.RED, 64, 64), null).build()
+        val second = loader.loadBitmapFromMetadata(withEmbedded)!!.get(5, TimeUnit.SECONDS).getPixel(32, 32)
+        assertTrue("embedded art must win", Color.red(second) > 200 && Color.blue(second) < 60)
+        // Repeated identical requests reuse the same result.
+        assertTrue(loader.loadBitmapFromMetadata(withEmbedded) === loader.loadBitmapFromMetadata(withEmbedded))
+    }
+
+    @Test fun undecodableEmbeddedArtFallsBackToFolderThenPlaceholder() {
+        val folder = android.net.Uri.fromFile(temporaryFolder.newFile("f.jpg").apply { writeBytes(jpeg(Color.BLUE, 64, 64)) })
+        val broken = byteArrayOf(1, 2, 3)
+        val pixel = loader.loadBitmapFromMetadata(MediaMetadata.Builder().setArtworkUri(folder)
+            .setArtworkData(broken, null).build())!!.get(5, TimeUnit.SECONDS).getPixel(32, 32)
+        assertTrue(Color.blue(pixel) > 200)
+        val placeholder = loader.loadBitmapFromMetadata(MediaMetadata.Builder().setAlbumTitle("Dune")
+            .setArtworkData(broken, null).build())!!.get(5, TimeUnit.SECONDS)
+        assertEquals(512, placeholder.width)
+    }
 }
