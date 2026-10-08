@@ -14,13 +14,13 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
 
 1. **Folder Selection & Recursive Sub-Folder Scanning**
    - Tap "Choose Audiobook Folder" on first launch to pick any folder containing your audiobooks.
-   - Automatically scans sub-folders (up to 3 levels deep) and aggregates all audio tracks into a clean, unified library.
+   - Automatically scans sub-folders (up to 3 levels deep) and treats each sub-folder as one audiobook, with tracks played in natural filename order and automatic advance. Files directly in the chosen folder are single books.
    - You can easily switch to a different folder at any time using the folder icon at the top of the Library.
    - Supports popular audiobook formats: MP3, M4A, M4B, AAC, FLAC, OGG, WAV, WMA, and OPUS.
 
 2. **Clean Book Library**
    - Automatically formats file names into clean, readable book titles.
-   - Displays duration and listening progress percentage on every track.
+   - Displays duration and listening progress percentage on every book. Durations are cached for faster library loading.
    - Instant search and filtering bar to quickly locate books across directories.
 
 3. **Dedicated Player Screen**
@@ -31,6 +31,7 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
      - Rewind 15 seconds (`-15s`)
      - Fast forward 15 seconds (`+15s`)
      - Fast forward 1 minute (`+1m`)
+   - Previous/next track buttons and a track counter for multi-file books. The seek bar and skip controls operate within the current track.
    - **Playback Speed Selector**: 0.75x, 1.0x, 1.25x, and 1.5x speeds.
    - **Sleep Timer**: Choose 15, 30, 45, or 60 minutes. Shows a live countdown badge and automatically pauses audio when time is up.
 
@@ -40,7 +41,7 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
    - Tap any bookmark to jump straight to that moment, or delete bookmarks you no longer need.
 
 5. **Progress Memory**
-   - Automatically remembers your listening position for every book.
+   - Automatically remembers the track and position for every book, even when choosing a different parent folder containing the same book sub-folders.
    - Seamlessly resumes right where you left off when you open a book again.
    - Stored 100% privately on your device using Android SharedPreferences.
 
@@ -50,14 +51,9 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
 
 7. **100% Private & Pure Offline**
    - Zero internet permissions in the Android Manifest.
+   - App data is not included in Android cloud backup; folder access grants are device-specific.
    - No tracking, no analytics, no accounts, and no cloud dependencies.
    - Light, dark, and system-adaptive Material Design 3 themes.
-
----
-
-## Codebase Cleanup Note
-
-In this release, all unused template dependencies (including Firebase, Google Services plugin, OkHttp, Retrofit, Room, and Moshi) were removed from `app/build.gradle.kts`. The app relies exclusively on standard AndroidX libraries (`androidx.media`, `androidx.documentfile`, Jetpack Compose, Coroutines, and ViewModel) to ensure minimal APK size, fast builds, and guaranteed offline privacy.
 
 ---
 

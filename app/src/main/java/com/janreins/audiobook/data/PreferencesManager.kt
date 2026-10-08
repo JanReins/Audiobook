@@ -2,6 +2,7 @@ package com.janreins.audiobook.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.data.model.Bookmark
 import com.janreins.audiobook.ui.theme.AppThemeMode
 import org.json.JSONArray
@@ -67,6 +68,20 @@ class PreferencesManager(context: Context) {
         return prefs.getLong(PREFIX_POSITION + bookId, 0L)
     }
 
+    fun getBookProgress(bookId: String) = BookProgress(
+        prefs.getInt("track_$bookId", 0), getPlaybackPosition(bookId))
+
+    fun saveBookProgress(bookId: String, progress: BookProgress) {
+        prefs.edit().putInt("track_$bookId", progress.trackIndex)
+            .putLong(PREFIX_POSITION + bookId, progress.positionMs).apply()
+    }
+
+    fun hasBookProgress(bookId: String) =
+        prefs.contains(PREFIX_POSITION + bookId) || prefs.contains("track_$bookId")
+
+    fun isMigrated(bookId: String) = prefs.getBoolean("migrated_$bookId", false)
+    fun markMigrated(bookId: String) { prefs.edit().putBoolean("migrated_$bookId", true).apply() }
+
     // --- Playback Speed ---
     fun savePlaybackSpeed(speed: Float) {
         prefs.edit().putFloat(KEY_PLAYBACK_SPEED, speed).apply()
@@ -84,6 +99,7 @@ class PreferencesManager(context: Context) {
             obj.put("id", b.id)
             obj.put("audiobookId", b.audiobookId)
             obj.put("positionMs", b.positionMs)
+            obj.put("trackIndex", b.trackIndex)
             obj.put("title", b.title)
             obj.put("createdAt", b.createdAt)
             jsonArray.put(obj)
@@ -104,14 +120,15 @@ class PreferencesManager(context: Context) {
                         audiobookId = obj.optString("audiobookId", bookId),
                         positionMs = obj.optLong("positionMs", 0L),
                         title = obj.optString("title", "Bookmark"),
-                        createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                        createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                        trackIndex = obj.optInt("trackIndex", 0)
                     )
                 )
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return list.sortedBy { it.positionMs }
+        return list.sortedWith(compareBy<Bookmark> { it.trackIndex }.thenBy { it.positionMs })
     }
 
     fun addBookmark(bookmark: Bookmark) {

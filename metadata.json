@@ -2,5 +2,5 @@
   "name": "My Private Audiobook Player",
   "description": "A 100% offline, privacy-first audiobook player with folder library support, bookmarks, progress memory, and sleep timer.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

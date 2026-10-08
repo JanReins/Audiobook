@@ -65,6 +65,8 @@ fun AudiobookApp(
     val currentPlayingBook by viewModel.currentPlayingBook.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val currentPositionMs by viewModel.currentPositionMs.collectAsState()
+    val currentTrackIndex by viewModel.currentTrackIndex.collectAsState()
+    val trackCount by viewModel.trackCount.collectAsState()
     val durationMs by viewModel.durationMs.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val activeSleepOption by viewModel.activeSleepOption.collectAsState()
@@ -154,6 +156,10 @@ fun AudiobookApp(
                         onSelectThemeMode = { viewModel.setThemeMode(it) },
                         onBackClick = { viewModel.navigateBackToLibrary() },
                         onTogglePlayPause = { viewModel.togglePlayPause(context) },
+                        currentTrackIndex = currentTrackIndex,
+                        trackCount = trackCount,
+                        onPreviousTrack = viewModel::previousTrack,
+                        onNextTrack = viewModel::nextTrack,
                         onSeek = { pos -> viewModel.seekTo(pos) },
                         onSkipBackward15s = { viewModel.skipBackward15s() },
                         onSkipBackward1m = { viewModel.skipBackward1m() },

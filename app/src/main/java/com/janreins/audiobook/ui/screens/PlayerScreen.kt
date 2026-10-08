@@ -32,6 +32,8 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -103,7 +105,11 @@ fun PlayerScreen(
     onSelectBookmark: (Bookmark) -> Unit,
     onDeleteBookmark: (Bookmark) -> Unit,
     onDismissError: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentTrackIndex: Int = 0,
+    trackCount: Int = 1,
+    onPreviousTrack: () -> Unit = {},
+    onNextTrack: () -> Unit = {}
 ) {
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showAddBookmarkDialog by remember { mutableStateOf(false) }
@@ -330,6 +336,11 @@ fun PlayerScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
 
+                if (trackCount > 1) {
+                    Text("Track ${currentTrackIndex + 1} of $trackCount",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
@@ -354,6 +365,17 @@ fun PlayerScreen(
             )
 
             Spacer(modifier = Modifier.height(20.dp))
+
+            if (trackCount > 1) {
+                Row(horizontalArrangement = Arrangement.Center) {
+                    IconButton(onClick = onPreviousTrack, enabled = currentTrackIndex > 0) {
+                        Icon(Icons.Default.SkipPrevious, contentDescription = "Previous track")
+                    }
+                    IconButton(onClick = onNextTrack, enabled = currentTrackIndex < trackCount - 1) {
+                        Icon(Icons.Default.SkipNext, contentDescription = "Next track")
+                    }
+                }
+            }
 
             // Playback Controls (-1m, -15s, Play/Pause, +15s, +1m)
             PlayerControls(

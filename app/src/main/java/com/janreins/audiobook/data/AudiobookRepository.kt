@@ -3,12 +3,13 @@ package com.janreins.audiobook.data
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import com.janreins.audiobook.data.model.Audiobook
+import com.janreins.audiobook.data.model.ScannedAudioFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
-import java.util.regex.Pattern
 
 /**
  * Scans and loads audio files from the selected Storage Access Framework (SAF) folder,
@@ -17,6 +18,8 @@ import java.util.regex.Pattern
  */
 class AudiobookRepository(private val context: Context) {
 
+    private val durationCache = DurationCache(context)
+
     // Common audiobook & audio file extensions supported by Android's media player
     private val supportedExtensions = setOf(
         "mp3", "m4a", "m4b", "aac", "flac", "ogg", "oga", "wav", "wma", "opus"
@@ -24,10 +27,15 @@ class AudiobookRepository(private val context: Context) {
 
     /**
      * Scans the chosen directory URI and any nested sub-folders.
-     * Returns a flat, naturally sorted list of all discovered audio files.
+     * Returns naturally sorted books grouped by their immediate containing folder.
      */
     suspend fun loadAudiobooksFromFolder(folderUri: Uri): List<Audiobook> = withContext(Dispatchers.IO) {
-        val results = mutableListOf<Audiobook>()
+        BookGrouping.group(scanAudioFiles(folderUri))
+    }
+
+    suspend fun scanAudioFiles(folderUri: Uri): List<ScannedAudioFile> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<ScannedAudioFile>()
+        val seen = mutableSetOf<String>()
         val rootDirectory = DocumentFile.fromTreeUri(context, folderUri) ?: return@withContext emptyList()
 
         if (!rootDirectory.exists() || !rootDirectory.isDirectory) {
@@ -39,11 +47,12 @@ class AudiobookRepository(private val context: Context) {
             directory = rootDirectory,
             currentDepth = 0,
             maxDepth = 3,
-            results = results
+            results = results,
+            seen = seen
         )
 
-        // Natural sort by title (e.g., Chapter 1, Chapter 2, ..., Chapter 10)
-        return@withContext results.sortedWith(NaturalOrderComparator())
+        durationCache.save(seen)
+        return@withContext results
     }
 
     /**
@@ -54,7 +63,8 @@ class AudiobookRepository(private val context: Context) {
         directory: DocumentFile,
         currentDepth: Int,
         maxDepth: Int,
-        results: MutableList<Audiobook>
+        results: MutableList<ScannedAudioFile>,
+        seen: MutableSet<String>
     ) {
         val files = try {
             directory.listFiles()
@@ -67,28 +77,24 @@ class AudiobookRepository(private val context: Context) {
             try {
                 if (file.isFile && isAudioFile(file)) {
                     val fileName = file.name ?: "Untitled Audio"
-                    val cleanTitle = cleanFileName(fileName)
                     val size = file.length()
-                    val durationMs = extractDuration(file.uri)
-
-                    results.add(
-                        Audiobook(
-                            id = file.uri.toString(),
-                            uri = file.uri,
-                            title = cleanTitle,
-                            fileName = fileName,
-                            durationMs = durationMs,
-                            sizeBytes = size,
-                            formattedDuration = formatDuration(durationMs)
-                        )
-                    )
+                    val modified = file.lastModified()
+                    val id = documentId(file.uri)
+                    val key = DurationCache.key(id, size, modified)
+                    seen.add(key)
+                    val duration = durationCache.get(key) ?: extractDuration(file.uri).also {
+                        durationCache.put(key, it)
+                    }
+                    results.add(ScannedAudioFile(file.uri, id, fileName, size, modified,
+                        documentId(directory.uri), directory.name, currentDepth == 0, duration))
                 } else if (file.isDirectory && currentDepth < maxDepth) {
                     // Dive into the sub-folder to look for more audio files
                     scanDirectoryRecursively(
                         directory = file,
                         currentDepth = currentDepth + 1,
                         maxDepth = maxDepth,
-                        results = results
+                        results = results,
+                        seen = seen
                     )
                 }
             } catch (e: Exception) {
@@ -110,14 +116,9 @@ class AudiobookRepository(private val context: Context) {
         return extension in supportedExtensions
     }
 
-    /**
-     * Removes the file extension and underscores to produce a clean, human-readable title.
-     */
-    private fun cleanFileName(fileName: String): String {
-        val withoutExt = fileName.substringBeforeLast('.')
-        // Replace multiple underscores or hyphens with a space for readability
-        return withoutExt.replace('_', ' ').trim()
-    }
+    private fun documentId(uri: Uri): String = try {
+        DocumentsContract.getDocumentId(uri)
+    } catch (_: Exception) { uri.toString() }
 
     /**
      * Attempts to read the track duration using Android's MediaMetadataRetriever.
@@ -157,43 +158,5 @@ class AudiobookRepository(private val context: Context) {
                 String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds)
             }
         }
-    }
-}
-
-/**
- * Natural comparator for sorting filenames like Chapter 1, Chapter 2, Chapter 10 in logical order.
- */
-class NaturalOrderComparator : Comparator<Audiobook> {
-    private val pattern = Pattern.compile("(\\d+)|(\\D+)")
-
-    override fun compare(o1: Audiobook, o2: Audiobook): Int {
-        val s1 = o1.title
-        val s2 = o2.title
-        val matcher1 = pattern.matcher(s1)
-        val matcher2 = pattern.matcher(s2)
-
-        while (matcher1.find() && matcher2.find()) {
-            val chunk1 = matcher1.group()
-            val chunk2 = matcher2.group()
-
-            val isDigit1 = chunk1.all { it.isDigit() }
-            val isDigit2 = chunk2.all { it.isDigit() }
-
-            val result = if (isDigit1 && isDigit2) {
-                val num1 = chunk1.toBigIntegerOrNull()
-                val num2 = chunk2.toBigIntegerOrNull()
-                if (num1 != null && num2 != null) {
-                    num1.compareTo(num2)
-                } else {
-                    chunk1.compareTo(chunk2, ignoreCase = true)
-                }
-            } else {
-                chunk1.compareTo(chunk2, ignoreCase = true)
-            }
-
-            if (result != 0) return result
-        }
-
-        return s1.compareTo(s2, ignoreCase = true)
     }
 }
