@@ -52,7 +52,8 @@ object ChapterRules {
         val tail = sorted.firstOrNull { it.startMs >= tailStart } ?: return body
         // The chapter before it now ends where the moved one starts.
         val previous = body.lastOrNull()?.let { if (it.endMs > tailStart) it.copy(endMs = tailStart) else it }
-        return body.dropLast(1) + listOfNotNull(previous) + tail.copy(startMs = tailStart)
+        // The moved chapter runs to the end of the file (its stated end may now be under 1 s away).
+        return body.dropLast(1) + listOfNotNull(previous) + tail.copy(startMs = tailStart, endMs = C.TIME_UNSET)
     }
 }
 

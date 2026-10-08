@@ -81,6 +81,13 @@ class ChapterRulesTest {
         assertEquals(listOf(0L to 98_000L, 98_000L to 100_000L), normal.map { it.startMs to it.endMs })
     }
 
+    @Test fun shiftedTailChapterRunsToTheEndOfTheFileDespiteAStatedEnd() {
+        val result = ChapterRules.buildForTrack(0, listOf(RawChapter(0, 9_600, "Body"),
+            RawChapter(9_600, 9_700, "Tail")), 10_000)
+        assertEquals(listOf(0L to 9_000L, 9_000L to 10_000L), result.map { it.startMs to it.endMs })
+        assertEquals(listOf("Body", "Tail"), result.map { it.title })
+    }
+
     @Test fun endEqualToStartIsAnUnknownEndUnlessItDuplicatesAnotherStart() {
         val result = ChapterRules.buildForTrack(0, listOf(RawChapter(0, 0, "One"),
             RawChapter(30_000, 30_000, "Two"), RawChapter(60_000, 60_000, "Marker"),
