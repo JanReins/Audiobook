@@ -68,6 +68,10 @@ fun AudiobookApp(
     val currentTrackIndex by viewModel.currentTrackIndex.collectAsState()
     val trackCount by viewModel.trackCount.collectAsState()
     val durationMs by viewModel.durationMs.collectAsState()
+    val skipBackSeconds by viewModel.skipBackSeconds.collectAsState()
+    val skipForwardSeconds by viewModel.skipForwardSeconds.collectAsState()
+    val smartRewindEnabled by viewModel.smartRewindEnabled.collectAsState()
+    val sleepFadeOut by viewModel.sleepFadeOut.collectAsState()
     val playbackSpeed by viewModel.playbackSpeed.collectAsState()
     val activeSleepOption by viewModel.activeSleepOption.collectAsState()
     val sleepTimerRemainingSeconds by viewModel.sleepTimerRemainingSeconds.collectAsState()
@@ -158,12 +162,22 @@ fun AudiobookApp(
                         onTogglePlayPause = { viewModel.togglePlayPause(context) },
                         currentTrackIndex = currentTrackIndex,
                         trackCount = trackCount,
+                        skipBackSeconds = skipBackSeconds,
+                        skipForwardSeconds = skipForwardSeconds,
+                        smartRewindEnabled = smartRewindEnabled,
+                        sleepFadeOut = sleepFadeOut,
+                        onSetSkipBackSeconds = viewModel::setSkipBackSeconds,
+                        onSetSkipForwardSeconds = viewModel::setSkipForwardSeconds,
+                        onSetSmartRewindEnabled = viewModel::setSmartRewindEnabled,
+                        onSetSleepFadeOut = viewModel::setSleepFadeOut,
+                        onExtendSleepTimer = viewModel::extendSleepTimer,
+                        onJumpToTrack = { viewModel.jumpToTrack(context, it) },
                         onPreviousTrack = viewModel::previousTrack,
                         onNextTrack = viewModel::nextTrack,
                         onSeek = { pos -> viewModel.seekTo(pos) },
-                        onSkipBackward15s = { viewModel.skipBackward15s() },
+                        onSkipBackward15s = { viewModel.skipBackward() },
                         onSkipBackward1m = { viewModel.skipBackward1m() },
-                        onSkipForward15s = { viewModel.skipForward15s() },
+                        onSkipForward15s = { viewModel.skipForward() },
                         onSkipForward1m = { viewModel.skipForward1m() },
                         onSetPlaybackSpeed = { speed -> viewModel.setPlaybackSpeed(speed) },
                         onSetSleepTimer = { option -> viewModel.setSleepTimer(option, context) },

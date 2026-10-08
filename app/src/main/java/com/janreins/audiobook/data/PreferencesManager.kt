@@ -2,6 +2,7 @@ package com.janreins.audiobook.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.janreins.audiobook.player.SkipIntervals
 import com.janreins.audiobook.data.model.BookProgress
 import com.janreins.audiobook.data.model.Bookmark
 import com.janreins.audiobook.ui.theme.AppThemeMode
@@ -25,6 +26,8 @@ class PreferencesManager(context: Context) {
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val PREFIX_POSITION = "pos_"
         private const val PREFIX_BOOKMARKS = "bookmarks_"
+        const val KEY_SKIP_BACK_SECONDS = "skip_back_seconds"
+        const val KEY_SKIP_FORWARD_SECONDS = "skip_forward_seconds"
     }
 
     // --- Theme Mode ---
@@ -90,6 +93,30 @@ class PreferencesManager(context: Context) {
     fun getPlaybackSpeed(): Float {
         return prefs.getFloat(KEY_PLAYBACK_SPEED, 1.0f)
     }
+
+    // Defaults: 15 seconds back, 30 seconds forward.
+    fun getSkipBackSeconds() = SkipIntervals.sanitize(prefs.getInt(KEY_SKIP_BACK_SECONDS, SkipIntervals.DEFAULT_BACK))
+    fun saveSkipBackSeconds(seconds: Int) {
+        prefs.edit().putInt(KEY_SKIP_BACK_SECONDS, SkipIntervals.sanitize(seconds)).apply()
+    }
+    fun getSkipForwardSeconds() = SkipIntervals.sanitize(
+        prefs.getInt(KEY_SKIP_FORWARD_SECONDS, SkipIntervals.DEFAULT_FORWARD), SkipIntervals.DEFAULT_FORWARD)
+    fun saveSkipForwardSeconds(seconds: Int) {
+        prefs.edit().putInt(KEY_SKIP_FORWARD_SECONDS, SkipIntervals.sanitize(seconds, SkipIntervals.DEFAULT_FORWARD)).apply()
+    }
+    fun getSmartRewindEnabled() = prefs.getBoolean("smart_rewind_enabled", true)
+    fun saveSmartRewindEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("smart_rewind_enabled", enabled).apply()
+    }
+    fun getSleepFadeOut() = prefs.getBoolean("sleep_fade_out", true)
+    fun saveSleepFadeOut(enabled: Boolean) {
+        prefs.edit().putBoolean("sleep_fade_out", enabled).apply()
+    }
+
+    fun registerChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    fun unregisterChangeListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
 
     // --- Bookmarks Management ---
     fun saveBookmarks(bookId: String, bookmarks: List<Bookmark>) {

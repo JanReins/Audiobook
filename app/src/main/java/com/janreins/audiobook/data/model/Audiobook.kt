@@ -49,8 +49,12 @@ data class Bookmark(
  */
 enum class SleepTimerOption(val minutes: Int, val label: String) {
     OFF(0, "Off"),
+    MIN_5(5, "5 min"),
+    MIN_10(10, "10 min"),
     MIN_15(15, "15 min"),
     MIN_30(30, "30 min"),
     MIN_45(45, "45 min"),
-    MIN_60(60, "60 min")
+    MIN_60(60, "60 min"),
+    MIN_90(90, "90 min"),
+    END_OF_TRACK(0, "End of track")
 }

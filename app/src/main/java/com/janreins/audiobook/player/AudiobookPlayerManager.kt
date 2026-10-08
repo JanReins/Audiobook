@@ -3,6 +3,7 @@ package com.janreins.audiobook.player
 import android.content.ComponentName
 import android.content.Context
 import android.os.SystemClock
+import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.media3.common.C
@@ -43,6 +44,8 @@ object AudiobookPlayerManager {
     private val saveThrottle = PlaybackPositions.SaveThrottle()
     private var positionTrackerJob: Job? = null
     private var sleepTimerJob: Job? = null
+    private var lastSleepVolume = 1f
+    private var sleepDeadlineMs: Long? = null
     private val knownBooks = mutableMapOf<String, Audiobook>()
 
     private val _currentBook = MutableStateFlow<Audiobook?>(null)
@@ -75,6 +78,13 @@ object AudiobookPlayerManager {
             if (isPlaying) startPositionTracker() else {
                 positionTrackerJob?.cancel()
                 saveCurrentPosition()
+            }
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM &&
+                _activeSleepOption.value == SleepTimerOption.END_OF_TRACK) {
+                setSleepTimer(SleepTimerOption.OFF)
             }
         }
 
@@ -130,7 +140,7 @@ object AudiobookPlayerManager {
         if (appContext == null) {
             appContext = context.applicationContext
             prefsManager = PreferencesManager(requireNotNull(appContext))
-            _playbackSpeed.value = prefsManager?.getPlaybackSpeed() ?: 1f
+            _playbackSpeed.value = SpeedSteps.snap(prefsManager?.getPlaybackSpeed() ?: 1f)
         }
         connect()
     }
@@ -282,31 +292,58 @@ object AudiobookPlayerManager {
 
     fun setPlaybackSpeed(speed: Float) {
         if (!speed.isFinite() || speed <= 0f) return
-        _playbackSpeed.value = speed
-        prefsManager?.savePlaybackSpeed(speed)
-        withController { it.setPlaybackSpeed(speed) }
+        val snapped = SpeedSteps.snap(speed)
+        _playbackSpeed.value = snapped
+        prefsManager?.savePlaybackSpeed(snapped)
+        withController { it.setPlaybackSpeed(snapped) }
     }
 
     fun setSleepTimer(option: SleepTimerOption, context: Context? = null) {
         if (context != null) initialize(context)
-        _activeSleepOption.value = option
         sleepTimerJob?.cancel()
         sleepTimerJob = null
+        sleepDeadlineMs = null
+        _activeSleepOption.value = option
         _sleepTimerRemainingSeconds.value = null
-        if (option == SleepTimerOption.OFF || option.minutes <= 0) return
+        lastSleepVolume = 1f
+        withController { player ->
+            player.volume = 1f
+            player.sendCustomCommand(PlaybackService.END_OF_TRACK, Bundle().apply {
+                putBoolean("enabled", option == SleepTimerOption.END_OF_TRACK)
+            })
+        }
+        if (option.minutes <= 0) return
+        sleepDeadlineMs = SystemClock.elapsedRealtime() + option.minutes * 60_000L
         sleepTimerJob = scope.launch {
-            var remaining = option.minutes * 60
-            _sleepTimerRemainingSeconds.value = remaining
-            while (isActive && remaining > 0) {
-                delay(1000)
-                _sleepTimerRemainingSeconds.value = --remaining
-            }
-            if (isActive) {
-                pause()
-                _activeSleepOption.value = SleepTimerOption.OFF
-                _sleepTimerRemainingSeconds.value = null
+            while (isActive) {
+                val remainingMs = ((sleepDeadlineMs ?: break) - SystemClock.elapsedRealtime()).coerceAtLeast(0L)
+                _sleepTimerRemainingSeconds.value = ((remainingMs + 999L) / 1000L).toInt()
+                if (remainingMs == 0L) {
+                    pause()
+                    lastSleepVolume = 1f
+                    withController { it.volume = 1f }
+                    sleepDeadlineMs = null
+                    _activeSleepOption.value = SleepTimerOption.OFF
+                    _sleepTimerRemainingSeconds.value = null
+                    break
+                }
+                val volume = if (prefsManager?.getSleepFadeOut() != false) SleepFade.volumeFor(remainingMs) else 1f
+                if (volume != lastSleepVolume) {
+                    lastSleepVolume = volume
+                    withController { it.volume = volume }
+                }
+                delay(250)
             }
         }
+    }
+
+    fun extendSleepTimer() {
+        val deadline = sleepDeadlineMs ?: return
+        sleepDeadlineMs = deadline + 300_000L
+        _sleepTimerRemainingSeconds.value =
+            ((deadline + 300_000L - SystemClock.elapsedRealtime()).coerceAtLeast(0L) / 1000L).toInt()
+        lastSleepVolume = 1f
+        withController { it.volume = 1f }
     }
 
     private fun updatePosition(player: Player) {
@@ -349,6 +386,7 @@ object AudiobookPlayerManager {
         saveCurrentPosition()
         player.stop()
         player.clearMediaItems()
+        setSleepTimer(SleepTimerOption.OFF)
         _isPlaying.value = false
         positionTrackerJob?.cancel()
     }

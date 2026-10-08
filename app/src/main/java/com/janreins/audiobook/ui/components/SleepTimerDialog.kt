@@ -2,6 +2,8 @@ package com.janreins.audiobook.ui.components
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -34,7 +36,10 @@ fun SleepTimerDialog(
     currentOption: SleepTimerOption,
     remainingSeconds: Int?,
     onDismiss: () -> Unit,
-    onSelectOption: (SleepTimerOption) -> Unit
+    onSelectOption: (SleepTimerOption) -> Unit,
+    fadeOut: Boolean = true,
+    onSetFadeOut: (Boolean) -> Unit = {},
+    onExtend: () -> Unit = {}
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -51,7 +56,7 @@ fun SleepTimerDialog(
             }
         },
         text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 if (remainingSeconds != null && remainingSeconds > 0) {
                     val minutes = remainingSeconds / 60
                     val seconds = remainingSeconds % 60
@@ -72,6 +77,13 @@ fun SleepTimerDialog(
                     )
                 }
 
+                if (currentOption == SleepTimerOption.END_OF_TRACK) {
+                    Text("Audiobook will pause at the end of this track.")
+                }
+                if (remainingSeconds != null && remainingSeconds > 0) {
+                    TextButton(onClick = onExtend) { Text("+5 min") }
+                }
+                PlaybackSwitch("Fade out in the last 30 seconds", fadeOut, onSetFadeOut)
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -109,7 +121,7 @@ fun SleepTimerDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (option == SleepTimerOption.OFF) "Off (No Timer)" else "${option.minutes} Minutes",
+                                    text = option.label,
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                     color = if (isSelected) {

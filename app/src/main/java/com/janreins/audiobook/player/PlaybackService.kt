@@ -2,11 +2,15 @@ package com.janreins.audiobook.player
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.SharedPreferences
+import android.os.SystemClock
 import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
+import androidx.media3.common.ForwardingPlayer
+import com.janreins.audiobook.data.PreferencesManager
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.CommandButton
@@ -23,9 +27,20 @@ import com.janreins.audiobook.MainActivity
 @OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
+    private var prefs: PreferencesManager? = null
+    // Held strongly: SharedPreferences only keeps weak references to listeners.
+    private val skipLabelListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == PreferencesManager.KEY_SKIP_BACK_SECONDS || key == PreferencesManager.KEY_SKIP_FORWARD_SECONDS) {
+            val p = prefs ?: return@OnSharedPreferenceChangeListener
+            session?.setMediaButtonPreferences(mediaButtons(p))
+        }
+    }
+    private var pausedAtMs: Long? = null
+    private var pausedMediaId: String? = null
 
     companion object {
         val REWIND_60 = SessionCommand("com.janreins.audiobook.REWIND_60", Bundle.EMPTY)
+        val END_OF_TRACK = SessionCommand("com.janreins.audiobook.END_OF_TRACK", Bundle.EMPTY)
         val FORWARD_60 = SessionCommand("com.janreins.audiobook.FORWARD_60", Bundle.EMPTY)
     }
 
@@ -44,10 +59,66 @@ class PlaybackService : MediaSessionService() {
             .setSeekBackIncrementMs(15_000)
             .setSeekForwardIncrementMs(15_000)
             .build()
+        val prefs = PreferencesManager(this).also { this.prefs = it }
+        prefs.registerChangeListener(skipLabelListener)
+        val sessionPlayer = object : ForwardingPlayer(player) {
+            override fun getSeekBackIncrement(): Long = prefs.getSkipBackSeconds() * 1000L
+            override fun getSeekForwardIncrement(): Long = prefs.getSkipForwardSeconds() * 1000L
+            override fun seekBack() {
+                seekTo(SeekMath.clampSeek(currentPosition, -seekBackIncrement, duration))
+            }
+            override fun seekForward() {
+                seekTo(SeekMath.clampSeek(currentPosition, seekForwardIncrement, duration))
+            }
+            // Smart rewind lives here so the app, notification, lock screen and headset buttons all get it.
+            override fun play() {
+                applySmartRewind(player, prefs)
+                super.play()
+            }
+            override fun setPlayWhenReady(playWhenReady: Boolean) {
+                if (playWhenReady) applySmartRewind(player, prefs)
+                super.setPlayWhenReady(playWhenReady)
+            }
+        }
+        player.addListener(object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!playWhenReady && player.currentMediaItem != null && pausedAtMs == null) {
+                    pausedAtMs = SystemClock.elapsedRealtime()
+                    pausedMediaId = player.currentMediaItem?.mediaId
+                } else if (playWhenReady) {
+                    pausedAtMs = null
+                    pausedMediaId = null
+                }
+            }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int
+            ) {
+                // An explicit seek while paused (scrubbing, bookmark, track jump) picks the exact
+                // resume point, so it must not be rewound again.
+                if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                    pausedAtMs = null
+                    pausedMediaId = null
+                }
+            }
+            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
+                    pausedAtMs = null
+                    pausedMediaId = null
+                }
+            }
+        })
+        // ExoPlayer owns this setting; MediaController does not expose it.
+        player.addListener(object : Player.Listener {
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
+                    player.pauseAtEndOfMediaItems = false
+                }
+            }
+        })
         val activity = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE
         )
-        session = MediaSession.Builder(this, player)
+        session = MediaSession.Builder(this, sessionPlayer)
             .setSessionActivity(activity)
             .setCallback(object : MediaSession.Callback {
                 override fun onConnect(
@@ -56,7 +127,7 @@ class PlaybackService : MediaSessionService() {
                     val defaults = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).build()
                     return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
                         .setAvailableSessionCommands(defaults.availableSessionCommands.buildUpon()
-                            .add(REWIND_60).add(FORWARD_60).build())
+                            .add(REWIND_60).add(FORWARD_60).add(END_OF_TRACK).build())
                         .build()
                 }
 
@@ -64,6 +135,10 @@ class PlaybackService : MediaSessionService() {
                     session: MediaSession, controller: MediaSession.ControllerInfo,
                     customCommand: SessionCommand, args: Bundle
                 ): ListenableFuture<SessionResult> {
+                    if (customCommand.customAction == END_OF_TRACK.customAction) {
+                        player.pauseAtEndOfMediaItems = args.getBoolean("enabled", false)
+                        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                    }
                     val delta = when (customCommand.customAction) {
                         REWIND_60.customAction -> -60_000L
                         FORWARD_60.customAction -> 60_000L
@@ -76,22 +151,34 @@ class PlaybackService : MediaSessionService() {
                 }
             })
             // Replace the default previous/next controls with single-file seeks.
-            .setMediaButtonPreferences(listOf(
-                CommandButton.Builder(CommandButton.ICON_SKIP_BACK_15)
-                    .setDisplayName("-15s").setPlayerCommand(Player.COMMAND_SEEK_BACK)
-                    .setSlots(CommandButton.SLOT_BACK).build(),
-                CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_15)
-                    .setDisplayName("+15s").setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
-                    .setSlots(CommandButton.SLOT_FORWARD).build(),
-                CommandButton.Builder(CommandButton.ICON_REWIND)
-                    .setDisplayName("-1m").setSessionCommand(REWIND_60)
-                    .setSlots(CommandButton.SLOT_OVERFLOW).build(),
-                CommandButton.Builder(CommandButton.ICON_FAST_FORWARD)
-                    .setDisplayName("+1m").setSessionCommand(FORWARD_60)
-                    .setSlots(CommandButton.SLOT_OVERFLOW).build()
-            ))
+            .setMediaButtonPreferences(mediaButtons(prefs))
             .build()
     }
+
+    private fun applySmartRewind(player: Player, prefs: PreferencesManager) {
+        val pausedAt = pausedAtMs ?: return
+        pausedAtMs = null
+        if (player.playWhenReady || !prefs.getSmartRewindEnabled() ||
+            pausedMediaId != player.currentMediaItem?.mediaId) return
+        val rewind = SmartRewind.rewindMsFor(SystemClock.elapsedRealtime() - pausedAt)
+        if (rewind > 0) player.seekTo(SeekMath.clampSeek(player.currentPosition, -rewind, player.duration))
+    }
+
+    // Replace the default previous/next controls with single-file seeks.
+    private fun mediaButtons(prefs: PreferencesManager) = listOf(
+        CommandButton.Builder(CommandButton.ICON_SKIP_BACK)
+            .setDisplayName("-${prefs.getSkipBackSeconds()}s").setPlayerCommand(Player.COMMAND_SEEK_BACK)
+            .setSlots(CommandButton.SLOT_BACK).build(),
+        CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD)
+            .setDisplayName("+${prefs.getSkipForwardSeconds()}s").setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+            .setSlots(CommandButton.SLOT_FORWARD).build(),
+        CommandButton.Builder(CommandButton.ICON_REWIND)
+            .setDisplayName("-1m").setSessionCommand(REWIND_60)
+            .setSlots(CommandButton.SLOT_OVERFLOW).build(),
+        CommandButton.Builder(CommandButton.ICON_FAST_FORWARD)
+            .setDisplayName("+1m").setSessionCommand(FORWARD_60)
+            .setSlots(CommandButton.SLOT_OVERFLOW).build()
+    )
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
@@ -101,6 +188,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        prefs?.unregisterChangeListener(skipLabelListener)
         session?.run { player.release(); release() }
         session = null
         super.onDestroy()

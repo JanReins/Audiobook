@@ -60,6 +60,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentBookmarks = MutableStateFlow<List<Bookmark>>(emptyList())
     val currentBookmarks: StateFlow<List<Bookmark>> = _currentBookmarks.asStateFlow()
 
+    private val _skipBackSeconds = MutableStateFlow(prefs.getSkipBackSeconds())
+    val skipBackSeconds = _skipBackSeconds.asStateFlow()
+    private val _skipForwardSeconds = MutableStateFlow(prefs.getSkipForwardSeconds())
+    val skipForwardSeconds = _skipForwardSeconds.asStateFlow()
+    private val _smartRewindEnabled = MutableStateFlow(prefs.getSmartRewindEnabled())
+    val smartRewindEnabled = _smartRewindEnabled.asStateFlow()
+    private val _sleepFadeOut = MutableStateFlow(prefs.getSleepFadeOut())
+    val sleepFadeOut = _sleepFadeOut.asStateFlow()
+
+    fun setSkipBackSeconds(seconds: Int) {
+        prefs.saveSkipBackSeconds(seconds)
+        _skipBackSeconds.value = prefs.getSkipBackSeconds()
+    }
+    fun setSkipForwardSeconds(seconds: Int) {
+        prefs.saveSkipForwardSeconds(seconds)
+        _skipForwardSeconds.value = prefs.getSkipForwardSeconds()
+    }
+    fun setSmartRewindEnabled(enabled: Boolean) {
+        prefs.saveSmartRewindEnabled(enabled)
+        _smartRewindEnabled.value = enabled
+    }
+    fun setSleepFadeOut(enabled: Boolean) {
+        prefs.saveSleepFadeOut(enabled)
+        _sleepFadeOut.value = enabled
+    }
+    fun extendSleepTimer() = AudiobookPlayerManager.extendSleepTimer()
+    fun jumpToTrack(context: Context, index: Int) {
+        val book = currentPlayingBook.value ?: return
+        if (index !in 0 until book.trackCount) return
+        AudiobookPlayerManager.playBook(context, book, customStartPosMs = 0L, customTrackIndex = index)
+    }
+
     // Delegate player states from AudiobookPlayerManager
     val currentPlayingBook = AudiobookPlayerManager.currentBook
     val isPlaying = AudiobookPlayerManager.isPlaying
@@ -197,16 +229,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun previousTrack() = AudiobookPlayerManager.previousTrack()
     fun nextTrack() = AudiobookPlayerManager.nextTrack()
 
-    fun skipBackward15s() {
-        AudiobookPlayerManager.skip(-15_000L)
+    fun skipBackward() {
+        AudiobookPlayerManager.skip(-_skipBackSeconds.value * 1000L)
     }
 
     fun skipBackward1m() {
         AudiobookPlayerManager.skip(-60_000L)
     }
 
-    fun skipForward15s() {
-        AudiobookPlayerManager.skip(15_000L)
+    fun skipForward() {
+        AudiobookPlayerManager.skip(_skipForwardSeconds.value * 1000L)
     }
 
     fun skipForward1m() {
