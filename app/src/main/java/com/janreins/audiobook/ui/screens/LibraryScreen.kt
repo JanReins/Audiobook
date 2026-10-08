@@ -93,6 +93,7 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     currentThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
     onSelectThemeMode: (AppThemeMode) -> Unit = {},
+    chapterTitle: String? = null,
     libraryVersion: Long = 0L,
     sort: LibrarySort = LibrarySort.TITLE,
     filter: LibraryFilter = LibraryFilter.ALL,
@@ -206,6 +207,7 @@ fun LibraryScreen(
                     audiobook = currentPlayingBook,
                     isPlaying = isPlaying,
                     onBarClick = onMiniPlayerClick,
+                    chapterTitle = chapterTitle,
                     onTogglePlayPause = onTogglePlayPause
                 )
             }
@@ -395,7 +397,8 @@ fun MiniPlayerBar(
     audiobook: Audiobook,
     isPlaying: Boolean,
     onBarClick: () -> Unit,
-    onTogglePlayPause: () -> Unit
+    onTogglePlayPause: () -> Unit,
+    chapterTitle: String? = null
 ) {
     Surface(
         modifier = Modifier
@@ -433,7 +436,9 @@ fun MiniPlayerBar(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = if (isPlaying) "Playing • Tap for player" else "Paused • Tap to resume",
+                    text = chapterTitle ?: if (isPlaying) "Playing • Tap for player" else "Paused • Tap to resume",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

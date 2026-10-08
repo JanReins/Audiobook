@@ -23,7 +23,8 @@ data class Audiobook(
     val formattedDuration: String = "",
     val tracks: List<AudioTrack> = emptyList(),
     val coverUri: Uri? = null,
-    val coverKey: String? = null
+    val coverKey: String? = null,
+    val lastModified: Long = 0L
 ) {
     val trackCount get() = tracks.size.coerceAtLeast(1)
 }

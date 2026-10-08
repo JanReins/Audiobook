@@ -9,6 +9,7 @@ import com.janreins.audiobook.data.FolderAccess
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.janreins.audiobook.data.ChapterRepository
 import com.janreins.audiobook.data.AudiobookRepository
 import com.janreins.audiobook.data.BookStatus
 import com.janreins.audiobook.data.LibraryStateStore
@@ -20,6 +21,7 @@ import com.janreins.audiobook.data.PreferencesManager
 import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.data.model.Bookmark
 import com.janreins.audiobook.data.model.SleepTimerOption
+import com.janreins.audiobook.player.BookChapter
 import com.janreins.audiobook.player.AudiobookPlayerManager
 import com.janreins.audiobook.ui.theme.AppThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -133,16 +135,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _sleepFadeOut.value = enabled
     }
     fun extendSleepTimer() = AudiobookPlayerManager.extendSleepTimer()
-    fun jumpToTrack(context: Context, index: Int) {
-        val book = currentPlayingBook.value ?: return
-        if (index !in 0 until book.trackCount) return
-        AudiobookPlayerManager.playBook(context, book, customStartPosMs = 0L, customTrackIndex = index)
-    }
-
     // Delegate player states from AudiobookPlayerManager
     val currentPlayingBook = AudiobookPlayerManager.currentBook
     val isPlaying = AudiobookPlayerManager.isPlaying
     val currentPositionMs = AudiobookPlayerManager.currentPositionMs
+    val chapters = AudiobookPlayerManager.chapters
+    val currentChapter = AudiobookPlayerManager.currentChapter
+    fun jumpToChapter(chapter: BookChapter) = AudiobookPlayerManager.jumpToChapter(chapter)
     val currentTrackIndex = AudiobookPlayerManager.currentTrackIndex
     val trackCount = AudiobookPlayerManager.trackCount
     val durationMs = AudiobookPlayerManager.durationMs
@@ -252,6 +251,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun openPlayer() {
         val book = AudiobookPlayerManager.currentBook.value
         if (book != null) {
+            ChapterRepository.ensureLoaded(book)
             _currentBookmarks.value = prefs.getBookmarks(book.id)
             _currentScreen.value = AppScreen.PLAYER
         }
@@ -273,8 +273,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         AudiobookPlayerManager.seekTo(positionMs)
     }
 
-    fun previousTrack() = AudiobookPlayerManager.previousTrack()
-    fun nextTrack() = AudiobookPlayerManager.nextTrack()
+    fun previous() = AudiobookPlayerManager.previous()
+    fun next() = AudiobookPlayerManager.next()
 
     fun skipBackward() {
         AudiobookPlayerManager.skip(-_skipBackSeconds.value * 1000L)

@@ -52,6 +52,7 @@ class AudiobookRepository(private val context: Context) {
         )
 
         durationCache.save(seen)
+        ChapterRepository.prune(seen.mapTo(mutableSetOf()) { "v1|$it" })
         return@withContext results
     }
 

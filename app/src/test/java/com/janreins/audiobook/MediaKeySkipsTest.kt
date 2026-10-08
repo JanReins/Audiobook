@@ -20,6 +20,16 @@ class MediaKeySkipsTest {
         assertNull(MediaKeySkips.direction(KeyEvent.KEYCODE_MEDIA_NEXT, 0))
     }
 
+    @Test fun chaptersTakePriorityOverFilesAndSkips() {
+        for (count in listOf(1, 3)) {
+            assertNull(MediaKeySkips.direction(KeyEvent.KEYCODE_MEDIA_NEXT, count, 3))
+            assertNull(MediaKeySkips.direction(KeyEvent.KEYCODE_MEDIA_PREVIOUS, count, 3))
+            assertNull(MediaKeySkips.direction(KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD, count, 3))
+            assertNull(MediaKeySkips.direction(KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD, count, 3))
+        }
+        assertEquals(1, MediaKeySkips.direction(KeyEvent.KEYCODE_MEDIA_NEXT, 1, 0))
+    }
+
     @Test fun otherKeysAreLeftToMedia3() {
         assertNull(MediaKeySkips.direction(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 1))
         assertNull(MediaKeySkips.direction(KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, 1))
