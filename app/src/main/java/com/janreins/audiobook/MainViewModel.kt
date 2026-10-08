@@ -4,6 +4,8 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
+import com.janreins.audiobook.data.FolderAccess
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,6 +44,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentScreen = MutableStateFlow(AppScreen.FOLDER_SELECTION)
     val currentScreen: StateFlow<AppScreen> = _currentScreen.asStateFlow()
 
+    private val _folderMessage = MutableStateFlow<String?>(null)
+    val folderMessage: StateFlow<String?> = _folderMessage.asStateFlow()
+
     private val _folderUri = MutableStateFlow<Uri?>(null)
     val folderUri: StateFlow<Uri?> = _folderUri.asStateFlow()
 
@@ -76,6 +81,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val savedFolderString = prefs.getFolderUri()
         if (!savedFolderString.isNullOrBlank()) {
             val uri = Uri.parse(savedFolderString)
+            if (!FolderAccess.hasPersistedReadAccess(getApplication<Application>().contentResolver, uri)) {
+                prefs.saveFolderUri(null)
+                _folderMessage.value = "Access to your audiobook folder was lost. Please choose the folder again."
+                _currentScreen.value = AppScreen.FOLDER_SELECTION
+                return
+            }
             _folderUri.value = uri
             _currentScreen.value = AppScreen.LIBRARY
             loadAudiobooks(uri)
@@ -94,8 +105,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             context.contentResolver.takePersistableUriPermission(uri, takeFlags)
         } catch (e: Exception) {
             Log.w("MainViewModel", "Could not take persistable URI permission: ${e.message}")
+            _folderMessage.value = "Could not keep access to this folder. Please choose the folder again."
+            _currentScreen.value = AppScreen.FOLDER_SELECTION
+            return
         }
 
+        context.contentResolver.persistedUriPermissions.forEach { permission ->
+            if (permission.uri != uri && DocumentsContract.isTreeUri(permission.uri)) {
+                val flags = (if (permission.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                    (if (permission.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+                try {
+                    context.contentResolver.releasePersistableUriPermission(permission.uri, flags)
+                } catch (e: SecurityException) {
+                    Log.w("MainViewModel", "Could not release old folder permission", e)
+                }
+            }
+        }
+        _folderMessage.value = null
         prefs.saveFolderUri(uri.toString())
         _folderUri.value = uri
         _currentScreen.value = AppScreen.LIBRARY

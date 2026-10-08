@@ -70,6 +70,7 @@ fun AudiobookApp(
     val activeSleepOption by viewModel.activeSleepOption.collectAsState()
     val sleepTimerRemainingSeconds by viewModel.sleepTimerRemainingSeconds.collectAsState()
     val currentBookmarks by viewModel.currentBookmarks.collectAsState()
+    val folderMessage by viewModel.folderMessage.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
     // Storage Access Framework Folder Picker Launcher
@@ -112,6 +113,7 @@ fun AudiobookApp(
         when (screen) {
             AppScreen.FOLDER_SELECTION -> {
                 FolderSelectionScreen(
+                    message = folderMessage,
                     currentThemeMode = currentThemeMode,
                     onSelectThemeMode = { viewModel.setThemeMode(it) },
                     onSelectFolderClick = { folderPickerLauncher.launch(null) }
@@ -166,7 +168,7 @@ fun AudiobookApp(
                     )
                 } else {
                     // Fallback to library if no book is selected
-                    viewModel.navigateBackToLibrary()
+                    LaunchedEffect(Unit) { viewModel.navigateBackToLibrary() }
                 }
             }
         }
