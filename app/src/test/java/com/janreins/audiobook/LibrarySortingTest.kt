@@ -85,4 +85,16 @@ class LibrarySortingTest {
         assertEquals(emptyList<Audiobook>(), LibrarySorting.apply(emptyList(),
             { error("No status should be read") }, LibrarySort.TITLE, LibraryFilter.ALL, ""))
     }
+
+    @Test fun playedBookWithUnknownDurationIsInProgress() {
+        val unknown = listOf(book("u", "Unknown", 0L), book("n", "New", 0L))
+        val status = mapOf(
+            "u" to BookStatus(0f, false, 300L, started = true),
+            "n" to BookStatus(0f, false, null)
+        )
+        fun run(filter: LibraryFilter) =
+            LibrarySorting.apply(unknown, { status.getValue(it.id) }, LibrarySort.TITLE, filter, "").map { it.id }
+        assertEquals(listOf("u"), run(LibraryFilter.IN_PROGRESS))
+        assertEquals(listOf("n"), run(LibraryFilter.NOT_STARTED))
+    }
 }

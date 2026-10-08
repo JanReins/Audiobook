@@ -22,8 +22,8 @@ class LibraryStateStore(context: Context) {
         if (prefs.contains("last_played_at_$bookId")) prefs.getLong("last_played_at_$bookId", 0L) else null
 
     fun setLastPlayedAt(bookId: String, timestamp: Long) {
+        // No version bump: the library re-sorts on open or book change, not on every play/pause.
         prefs.edit().putLong("last_played_at_$bookId", timestamp).apply()
-        notifyProgressChanged()
     }
 
     fun getSort(): LibrarySort = LibrarySort.entries.firstOrNull {
@@ -42,7 +42,7 @@ class LibraryStateStore(context: Context) {
         prefs.edit().putString("library_filter", filter.name).apply()
     }
 
-    /** Called after progress writes, including writes from the player. */
+    /** Asks the library to re-sort: explicit finished/unplayed changes and book changes only. */
     fun notifyProgressChanged() {
         version.value += 1L
     }

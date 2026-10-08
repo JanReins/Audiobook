@@ -5,7 +5,16 @@ import com.janreins.audiobook.data.model.Audiobook
 enum class LibrarySort { TITLE, RECENT, PROGRESS, DURATION }
 enum class LibraryFilter { ALL, IN_PROGRESS, NOT_STARTED, FINISHED }
 
-data class BookStatus(val progressFraction: Float, val finished: Boolean, val lastPlayedAt: Long?)
+/**
+ * [started] is true once the book has any saved progress, so a played book whose duration is unknown
+ * (progress fraction 0) still counts as In progress.
+ */
+data class BookStatus(
+    val progressFraction: Float,
+    val finished: Boolean,
+    val lastPlayedAt: Long?,
+    val started: Boolean = progressFraction > 0f
+)
 
 object LibrarySorting {
     fun apply(
@@ -31,8 +40,8 @@ object LibrarySorting {
             val status = statuses.getValue(book.id)
             val matchesFilter = when (filter) {
                 LibraryFilter.ALL -> true
-                LibraryFilter.IN_PROGRESS -> !status.finished && status.progressFraction > 0f
-                LibraryFilter.NOT_STARTED -> !status.finished && status.progressFraction == 0f
+                LibraryFilter.IN_PROGRESS -> !status.finished && (status.started || status.progressFraction > 0f)
+                LibraryFilter.NOT_STARTED -> !status.finished && !status.started && status.progressFraction == 0f
                 LibraryFilter.FINISHED -> status.finished
             }
             matchesFilter && (query.isBlank() || book.title.contains(query, ignoreCase = true) ||

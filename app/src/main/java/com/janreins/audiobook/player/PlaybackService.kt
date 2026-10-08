@@ -180,6 +180,14 @@ class PlaybackService : MediaSessionService() {
         override fun seekForward() {
             seekTo(SeekMath.clampSeek(currentPosition, seekForwardIncrement, duration))
         }
+        /**
+         * Media3 answers "play" after the end (notification, lock screen, headset) with
+         * seekToDefaultPosition() + play(), which would replay only the last file. Restart the whole
+         * book instead, matching the in-app play button.
+         */
+        override fun seekToDefaultPosition() {
+            if (exo.playbackState == Player.STATE_ENDED) exo.seekTo(0, 0L) else super.seekToDefaultPosition()
+        }
         override fun play() {
             applySmartRewind(exo, prefs)
             super.play()

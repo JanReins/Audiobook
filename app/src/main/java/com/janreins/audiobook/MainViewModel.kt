@@ -62,10 +62,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun getBookStatus(book: Audiobook): BookStatus {
         val finished = libraryState.isFinished(book.id)
+        val saved = prefs.getBookProgress(book.id)
         val progress = if (finished) 1f else if (book.durationMs > 0L) {
             (getSavedPosition(book.id).toFloat() / book.durationMs).coerceIn(0f, 1f)
         } else 0f
-        return BookStatus(progress, finished, libraryState.getLastPlayedAt(book.id))
+        val started = finished || progress > 0f || saved.positionMs > 0L || saved.trackIndex > 0
+        return BookStatus(progress, finished, libraryState.getLastPlayedAt(book.id), started)
     }
 
     fun markFinished(book: Audiobook) {
