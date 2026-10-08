@@ -53,7 +53,7 @@ class SessionPlayer(
                 .add(Player.COMMAND_SEEK_TO_NEXT).add(Player.COMMAND_SEEK_TO_PREVIOUS).build())
             if (!state.timeline.isEmpty) {
                 val title = index.chapters[index.indexAt(player.currentMediaItemIndex, player.currentPosition)].title
-                builder.setPlaylist(state.timeline, state.currentTracks, state.currentMetadata.buildUpon().setSubtitle(title).build())
+                builder.setPlaylist(state.timeline, state.currentTracks, state.currentMetadata.buildUpon().setSubtitle(title).setArtist(title).build())
             }
         }
         return builder.build()
@@ -68,12 +68,8 @@ class SessionPlayer(
                 else return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
             }
             Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_NEXT -> {
-                val index = chapterIndex()?.takeIf { it.navigable }
-                    ?: return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
-                val target = if (seekCommand == Player.COMMAND_SEEK_TO_PREVIOUS)
-                    ChapterNavigation.previousTarget(index, player.currentMediaItemIndex, player.currentPosition)
-                else ChapterNavigation.nextTarget(index, player.currentMediaItemIndex, player.currentPosition, player.mediaItemCount)
-                target?.let { player.seekTo(it.first, it.second) }
+                if (!ChapterNavigation.seek(player, chapterIndex(), seekCommand == Player.COMMAND_SEEK_TO_NEXT))
+                    return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
             }
             else -> return super.handleSeek(mediaItemIndex, positionMs, seekCommand)
         }

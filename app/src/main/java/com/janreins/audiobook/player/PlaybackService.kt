@@ -26,6 +26,7 @@ import com.janreins.audiobook.data.ChapterRepository
 import androidx.media3.common.MediaMetadata
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -157,21 +158,27 @@ class PlaybackService : MediaSessionService() {
                 session?.setMediaButtonPreferences(mediaButtons(prefs))
             }
         }
-        serviceScope.launch {
-            var lastChapter: Pair<String?, Int?>? = null
-            while (isActive) {
-                if (player.isPlaying) {
-                    val bookId = player.currentMediaItem?.mediaId?.substringBeforeLast("#")
-                    val chapter = bookId to currentChapterIndex()?.indexAt(player.currentMediaItemIndex, player.currentPosition)
-                    if (chapter != lastChapter) {
-                        lastChapter = chapter
-                        sessionPlayer.invalidate()
+        // Chapter title in the notification: tick only while playing (seeks invalidate via player events).
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                chapterTicker?.cancel()
+                chapterTicker = if (isPlaying) serviceScope.launch {
+                    var lastChapter: Pair<String?, Int?>? = null
+                    while (isActive) {
+                        val bookId = player.currentMediaItem?.mediaId?.substringBeforeLast("#")
+                        val chapter = bookId to currentChapterIndex()?.indexAt(player.currentMediaItemIndex, player.currentPosition)
+                        if (chapter != lastChapter) {
+                            lastChapter = chapter
+                            sessionPlayer.invalidate()
+                        }
+                        delay(1000)
                     }
-                }
-                delay(1000)
+                } else null
             }
-        }
+        })
     }
+
+    private var chapterTicker: Job? = null
 
     private fun currentChapterIndex(): ChapterIndex? = session?.player?.currentMediaItem?.mediaId
         ?.substringBeforeLast("#")?.let { ChapterRepository.indexes.value[it] }

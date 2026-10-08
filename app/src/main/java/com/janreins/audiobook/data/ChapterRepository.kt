@@ -22,7 +22,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -120,9 +119,8 @@ object ChapterRepository {
     }
 
     private suspend fun extract(track: AudioTrack): List<RawChapter> {
-        val retriever = withContext(Dispatchers.Main) {
-            MetadataRetriever.Builder(context, MediaItem.fromUri(track.uri)).build()
-        }
+        // Safe off the main thread: the retriever runs on Media3's shared worker thread, not the caller's looper.
+        val retriever = MetadataRetriever.Builder(context, MediaItem.fromUri(track.uri)).build()
         try {
             val groups = retriever.retrieveTrackGroups().await()
             // Formats within an adaptive group share chapters; use one audio format per group.

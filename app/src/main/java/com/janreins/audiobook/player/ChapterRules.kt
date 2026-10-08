@@ -1,20 +1,33 @@
 package com.janreins.audiobook.player
 
 import androidx.media3.common.C
+import androidx.media3.common.Player
 
 data class BookChapter(val trackIndex: Int, val startMs: Long, val endMs: Long, val title: String, val embedded: Boolean)
 data class RawChapter(val startMs: Long, val endMs: Long, val title: String?, val hidden: Boolean = false)
 
 object ChapterRules {
+    /** Scanned VBR MP3 durations can be a little short; chapters starting just past them are kept. */
+    const val END_TOLERANCE_MS = 2000L
+
     fun buildForTrack(trackIndex: Int, raw: List<RawChapter>, trackDurationMs: Long): List<BookChapter> {
-        val sorted = raw.filter { !it.hidden }.sortedBy { it.startMs }.distinctBy { it.startMs }
+        val known = trackDurationMs > 0
+        val sorted = raw.asSequence()
+            .filter { !it.hidden }
+            // Unknown (C.TIME_UNSET) or negative starts count from the beginning of the file.
+            .map { if (it.startMs < 0) it.copy(startMs = 0) else it }
+            // Zero-length or inverted entries go before de-duplication, so they cannot shadow a real chapter.
+            .filter { it.endMs == C.TIME_UNSET || it.endMs > it.startMs }
+            .filter { !known || it.startMs < trackDurationMs + END_TOLERANCE_MS }
+            // Kept within the tolerance: clamp the start into the file so it remains reachable.
+            .map { if (known && it.startMs >= trackDurationMs) it.copy(startMs = trackDurationMs - 1) else it }
+            .sortedBy { it.startMs }.distinctBy { it.startMs }.toList()
         val chapters = sorted.mapIndexedNotNull { i, chapter ->
-            val inferred = if (chapter.endMs != C.TIME_UNSET && chapter.endMs > chapter.startMs) chapter.endMs
+            val inferred = if (chapter.endMs != C.TIME_UNSET) chapter.endMs
                 else sorted.getOrNull(i + 1)?.startMs ?: trackDurationMs.takeIf { it > 0 } ?: C.TIME_UNSET
             // Never run past the file: a stated end beyond the duration is clamped to it.
             val end = if (inferred != C.TIME_UNSET && trackDurationMs > 0) minOf(inferred, trackDurationMs) else inferred
-            if ((trackDurationMs > 0 && chapter.startMs >= trackDurationMs) ||
-                (end != C.TIME_UNSET && end <= chapter.startMs)) null
+            if (end != C.TIME_UNSET && end <= chapter.startMs) null
             else BookChapter(trackIndex, chapter.startMs, end, chapter.title.orEmpty(), true)
         }
         if (chapters.isEmpty()) return listOf(BookChapter(trackIndex, 0, trackDurationMs.takeIf { it > 0 } ?: C.TIME_UNSET, "", false))
@@ -56,6 +69,20 @@ data class ChapterIndex(val chapters: List<BookChapter>, val hasEmbedded: Boolea
 }
 
 object ChapterNavigation {
+    /**
+     * Seeks [player] to the previous/next chapter with a plain seekTo(track, position), so controllers never
+     * see Media3's seekToPrevious/Next placeholder. Returns false when there is nothing to navigate.
+     */
+    fun seek(player: Player, index: ChapterIndex?, forward: Boolean): Boolean {
+        if (index?.navigable != true || player.currentMediaItem == null) return false
+        val track = player.currentMediaItemIndex
+        val position = player.currentPosition
+        val target = if (forward) nextTarget(index, track, position, player.mediaItemCount)
+            else previousTarget(index, track, position)
+        target?.let { player.seekTo(it.first, it.second) }
+        return true
+    }
+
     fun previousTarget(index: ChapterIndex, trackIndex: Int, positionMs: Long): Pair<Int, Long> {
         val i = index.indexAt(trackIndex, positionMs)
         val current = index.chapters.getOrNull(i) ?: return trackIndex to 0L

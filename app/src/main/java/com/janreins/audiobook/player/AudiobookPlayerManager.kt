@@ -322,8 +322,17 @@ object AudiobookPlayerManager {
         }
     }
 
-    fun previous() = withController { it.seekToPrevious() }
-    fun next() = withController { it.seekToNext() }
+    fun previous() = navigateChapter(forward = false)
+    fun next() = navigateChapter(forward = true)
+
+    /** Same rules as the notification/headset (SessionPlayer), as a direct seek so the saved position is exact. */
+    private fun navigateChapter(forward: Boolean) = withController { player ->
+        val index = _currentBook.value?.id?.takeIf { it == bookId(player.currentMediaItem) }
+            ?.let { ChapterRepository.indexes.value[it] }
+        if (!ChapterNavigation.seek(player, index, forward)) return@withController
+        updatePosition(player)
+        persistPosition()
+    }
     /** Plays from the chapter's exact start (playBook's resume rules would move starts near a file's end to 0). */
     fun jumpToChapter(chapter: BookChapter) {
         val book = _currentBook.value ?: return
