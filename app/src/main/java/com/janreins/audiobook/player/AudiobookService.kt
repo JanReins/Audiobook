@@ -1,5 +1,15 @@
 package com.janreins.audiobook.player
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.app.NotificationManagerCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,6 +20,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.janreins.audiobook.MainActivity
@@ -17,7 +28,7 @@ import com.janreins.audiobook.R
 
 /**
  * Foreground Service that handles background audio playback and delivers
- * an active playback notification with -1m, -15s, Play/Pause, +15s, and +1m controls.
+ * an active playback notification with -1m, -15s, Play/Pause, +15s, +1m and Close controls.
  */
 class AudiobookService : Service() {
 
@@ -38,54 +49,97 @@ class AudiobookService : Service() {
             val intent = Intent(context, AudiobookService::class.java)
             ContextCompat.startForegroundService(context, intent)
         }
-
-        fun updateNotification(context: Context) {
-            val intent = Intent(context, AudiobookService::class.java)
-            ContextCompat.startForegroundService(context, intent)
-        }
-
-        fun stop(context: Context) {
-            val intent = Intent(context, AudiobookService::class.java).apply {
-                action = ACTION_STOP
-            }
-            context.startService(intent)
-        }
     }
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var started = false
+    private var closing = false
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        serviceScope.launch {
+            combine(AudiobookPlayerManager.isPlaying, AudiobookPlayerManager.currentBook) { playing, book ->
+                playing to book
+            }.collect {
+                if (started && !closing) refreshNotification()
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_PLAY -> AudiobookPlayerManager.resume(this)
-            ACTION_PAUSE -> AudiobookPlayerManager.pause(this)
-            ACTION_TOGGLE -> AudiobookPlayerManager.togglePlayPause(this)
+        started = true
+        showForeground(buildNotification())
+        if (intent == null || AudiobookPlayerManager.currentBook.value == null) {
+            closing = true
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        when (intent.action) {
+            ACTION_PLAY -> AudiobookPlayerManager.resume()
+            ACTION_PAUSE -> AudiobookPlayerManager.pause()
+            ACTION_TOGGLE -> AudiobookPlayerManager.togglePlayPause()
             ACTION_REWIND_60 -> AudiobookPlayerManager.skip(-60_000L)
             ACTION_REWIND_15 -> AudiobookPlayerManager.skip(-15_000L)
             ACTION_FORWARD_15 -> AudiobookPlayerManager.skip(15_000L)
             ACTION_FORWARD_60 -> AudiobookPlayerManager.skip(60_000L)
             ACTION_STOP -> {
-                AudiobookPlayerManager.pause(this)
+                closing = true
+                AudiobookPlayerManager.pause()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
         }
 
-        val notification = buildNotification()
+        refreshNotification()
+        return START_NOT_STICKY
+    }
+
+    private fun showForeground(notification: Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
+    }
 
-        return START_STICKY
+    private fun refreshNotification() {
+        val notification = buildNotification()
+        if (AudiobookPlayerManager.isPlaying.value) {
+            try {
+                showForeground(notification)
+            } catch (e: Exception) {
+                // Android 12+ may refuse re-entering the foreground from the background
+                // (e.g. auto-resume after an audio focus gain). Keep playing and just update the notification.
+                Log.w("AudiobookService", "Could not re-enter foreground", e)
+                postNotification(notification)
+            }
+        } else {
+            stopForeground(STOP_FOREGROUND_DETACH)
+            postNotification(notification)
+        }
+    }
+
+    private fun postNotification(notification: Notification) {
+        if (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(
+                this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            NotificationManagerCompat.from(this).notify(NOTIFICATION_ID, notification)
+        }
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        AudiobookPlayerManager.saveCurrentPosition()
+        if (!AudiobookPlayerManager.isPlaying.value) stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
+    override fun onDestroy() {
+        closing = true
+        AudiobookPlayerManager.saveCurrentPosition()
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -128,7 +182,7 @@ class AudiobookService : Service() {
         val rewind60Intent = Intent(this, AudiobookService::class.java).apply {
             action = ACTION_REWIND_60
         }
-        val rewind60PendingIntent = PendingIntent.getService(
+        val rewind60PendingIntent = PendingIntent.getForegroundService(
             this,
             1,
             rewind60Intent,
@@ -139,7 +193,7 @@ class AudiobookService : Service() {
         val rewind15Intent = Intent(this, AudiobookService::class.java).apply {
             action = ACTION_REWIND_15
         }
-        val rewind15PendingIntent = PendingIntent.getService(
+        val rewind15PendingIntent = PendingIntent.getForegroundService(
             this,
             2,
             rewind15Intent,
@@ -150,7 +204,7 @@ class AudiobookService : Service() {
         val toggleIntent = Intent(this, AudiobookService::class.java).apply {
             action = ACTION_TOGGLE
         }
-        val togglePendingIntent = PendingIntent.getService(
+        val togglePendingIntent = PendingIntent.getForegroundService(
             this,
             3,
             toggleIntent,
@@ -161,7 +215,7 @@ class AudiobookService : Service() {
         val forward15Intent = Intent(this, AudiobookService::class.java).apply {
             action = ACTION_FORWARD_15
         }
-        val forward15PendingIntent = PendingIntent.getService(
+        val forward15PendingIntent = PendingIntent.getForegroundService(
             this,
             4,
             forward15Intent,
@@ -172,11 +226,16 @@ class AudiobookService : Service() {
         val forward60Intent = Intent(this, AudiobookService::class.java).apply {
             action = ACTION_FORWARD_60
         }
-        val forward60PendingIntent = PendingIntent.getService(
+        val forward60PendingIntent = PendingIntent.getForegroundService(
             this,
             5,
             forward60Intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val stopPendingIntent = PendingIntent.getForegroundService(
+            this, 6, Intent(this, AudiobookService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val playPauseTitle = if (isPlaying) "Pause" else "Play"
@@ -194,9 +253,10 @@ class AudiobookService : Service() {
             .addAction(playPauseIcon, playPauseTitle, togglePendingIntent)
             .addAction(android.R.drawable.ic_media_ff, "+15s", forward15PendingIntent)
             .addAction(android.R.drawable.ic_media_ff, "+1m", forward60PendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close", stopPendingIntent)
             .setStyle(
                 androidx.media.app.NotificationCompat.MediaStyle()
-                    // Shows -15s (index 1), Play/Pause (index 2), +15s (index 3) in compact view; expanded shows all 5
+                    // Shows -15s (index 1), Play/Pause (index 2), +15s (index 3) in compact view; expanded shows all 6
                     .setShowActionsInCompactView(1, 2, 3)
             )
             .build()

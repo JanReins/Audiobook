@@ -57,7 +57,8 @@ fun FolderSelectionScreen(
     currentThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
     onSelectThemeMode: (AppThemeMode) -> Unit = {},
     onSelectFolderClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    message: String? = null
 ) {
     var showThemeDialog by remember { mutableStateOf(false) }
 
@@ -145,6 +146,12 @@ fun FolderSelectionScreen(
             )
 
             Spacer(modifier = Modifier.height(32.dp))
+
+            if (message != null) {
+                Text(text = message, style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
 
             // Primary Action Button
             Button(

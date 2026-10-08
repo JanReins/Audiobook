@@ -1,13 +1,18 @@
 package com.janreins.audiobook.player
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.PlaybackParams
-import android.os.Build
+import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.janreins.audiobook.data.PreferencesManager
 import com.janreins.audiobook.data.model.Audiobook
 import com.janreins.audiobook.data.model.SleepTimerOption
@@ -16,27 +21,58 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
-/**
- * Central singleton controller managing audio playback, position tracking,
- * playback speed, and the sleep timer using Android's built-in MediaPlayer.
- */
 object AudiobookPlayerManager {
-
     private const val TAG = "AudiobookPlayerManager"
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-
+    private var appContext: Context? = null
     private var mediaPlayer: MediaPlayer? = null
     private var prefsManager: PreferencesManager? = null
     private var audioManager: AudioManager? = null
-    private var audioFocusRequest: AudioFocusRequest? = null
-
+    private var prepared = false
+    private var playWhenPrepared = false
+    private var pendingPosition = 0L
+    private var seekPending = false
+    private var resumeOnFocusGain = false
+    private var noisyRegistered = false
+    private val saveThrottle = PlaybackPositions.SaveThrottle()
+    private val audioAttributes = AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+    private val focusListener by lazy {
+        AudioManager.OnAudioFocusChangeListener { change ->
+            when (change) {
+                AudioManager.AUDIOFOCUS_LOSS -> pause()
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    val shouldResume = _isPlaying.value || resumeOnFocusGain
+                    pauseInternal(abandon = false)
+                    resumeOnFocusGain = shouldResume
+                }
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    val shouldResume = resumeOnFocusGain
+                    resumeOnFocusGain = false
+                    if (shouldResume) startPlayback()
+                }
+            }
+        }
+    }
+    private val audioFocusRequest by lazy {
+        AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(audioAttributes)
+            .setWillPauseWhenDucked(true)
+            .setOnAudioFocusChangeListener(focusListener).build()
+    }
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) pause()
+        }
+    }
     // --- Observable Player State ---
     private val _currentBook = MutableStateFlow<Audiobook?>(null)
     val currentBook: StateFlow<Audiobook?> = _currentBook.asStateFlow()
@@ -66,252 +102,213 @@ object AudiobookPlayerManager {
     private var positionTrackerJob: Job? = null
     private var sleepTimerJob: Job? = null
 
-    /**
-     * Initializes the player with context and preferences.
-     */
     fun initialize(context: Context) {
-        if (prefsManager == null) {
-            prefsManager = PreferencesManager(context.applicationContext)
-            audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            _playbackSpeed.value = prefsManager?.getPlaybackSpeed() ?: 1.0f
+        if (appContext == null) {
+            val application = context.applicationContext
+            appContext = application
+            prefsManager = PreferencesManager(application)
+            audioManager = application.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            _playbackSpeed.value = prefsManager?.getPlaybackSpeed() ?: 1f
         }
     }
 
-    /**
-     * Plays a selected audiobook, automatically restoring the last known playback position.
-     */
     fun playBook(context: Context, book: Audiobook, customStartPosMs: Long? = null) {
         initialize(context)
         _errorMessage.value = null
-
-        // If user tapped on the currently loaded book, toggle play/pause or seek
         if (_currentBook.value?.id == book.id && mediaPlayer != null) {
-            if (customStartPosMs != null) {
-                seekTo(customStartPosMs)
-            }
-            if (!_isPlaying.value) {
-                resume(context)
-            }
+            if (customStartPosMs != null) seekTo(customStartPosMs)
+            if (!_isPlaying.value) resume(context)
             return
         }
-
-        // Save position of previous book before switching
         saveCurrentPosition()
-
-        // Release old player
         releasePlayer()
-
         _currentBook.value = book
+        _durationMs.value = 0L
+        pendingPosition = customStartPosMs ?: prefsManager?.getPlaybackPosition(book.id) ?: 0L
+        _currentPositionMs.value = pendingPosition.coerceAtLeast(0L)
         prefsManager?.saveLastPlayedBookId(book.id)
-
-        val targetPosition = customStartPosMs ?: prefsManager?.getPlaybackPosition(book.id) ?: 0L
-
+        playWhenPrepared = true
         try {
-            val player = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
-                setDataSource(context.applicationContext, book.uri)
-                prepare()
+            val player = MediaPlayer()
+            mediaPlayer = player
+            player.setAudioAttributes(audioAttributes)
+            player.setWakeMode(requireNotNull(appContext), PowerManager.PARTIAL_WAKE_LOCK)
+            player.setOnSeekCompleteListener { sought ->
+                if (mediaPlayer === sought) seekPending = false
             }
-
-            val actualDuration = if (player.duration > 0) player.duration.toLong() else book.durationMs
-            _durationMs.value = actualDuration
-
-            val safeTargetPos = if (targetPosition in 0..actualDuration) targetPosition else 0L
-            if (safeTargetPos > 0) {
-                player.seekTo(safeTargetPos.toInt())
-                _currentPositionMs.value = safeTargetPos
-            } else {
-                _currentPositionMs.value = 0L
+            player.setOnPreparedListener { ready ->
+                if (mediaPlayer !== ready) return@setOnPreparedListener
+                try {
+                    prepared = true
+                    _durationMs.value = ready.duration.toLong().takeIf { it > 0 } ?: book.durationMs
+                    val position = PlaybackPositions.resumePosition(pendingPosition, _durationMs.value)
+                    _currentPositionMs.value = position
+                    seekPending = true
+                    ready.seekTo(position.toInt())
+                    if (playWhenPrepared) {
+                        if (requestAudioFocus()) startPlayback() else playWhenPrepared = false
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error finishing preparation", e)
+                    _errorMessage.value = "Unable to play audio file. It might be corrupted or moved."
+                    releasePlayer()
+                }
             }
-
-            // Apply current playback speed
-            applySpeed(player, _playbackSpeed.value)
-
-            player.setOnCompletionListener {
+            player.setOnCompletionListener { completed ->
+                if (mediaPlayer !== completed) return@setOnCompletionListener
                 _isPlaying.value = false
-                _currentPositionMs.value = _durationMs.value
-                saveCurrentPosition()
+                playWhenPrepared = false
+                _currentPositionMs.value = PlaybackPositions.positionAfterCompletion()
+                persistPosition()
+                seekPending = true
+                try { completed.seekTo(0) }
+                catch (e: Exception) { Log.w(TAG, "Could not rewind completed book", e) }
                 stopPositionTracker()
-                AudiobookService.updateNotification(context)
+                unregisterNoisy()
+                abandonFocus()
             }
-
-            player.setOnErrorListener { _, what, extra ->
-                Log.e(TAG, "MediaPlayer error: what=$what extra=$extra")
-                _errorMessage.value = "Unable to play audio file. It might be corrupted or moved."
-                _isPlaying.value = false
-                stopPositionTracker()
-                AudiobookService.updateNotification(context)
+            player.setOnErrorListener { failed, what, extra ->
+                if (mediaPlayer === failed) {
+                    Log.e(TAG, "MediaPlayer error: what=$what extra=$extra")
+                    _errorMessage.value = "Unable to play audio file. It might be corrupted or moved."
+                    persistPosition()
+                    releasePlayer()
+                }
                 true
             }
-
-            mediaPlayer = player
-
-            // Request Audio Focus and start playback
-            if (requestAudioFocus()) {
-                player.start()
-                _isPlaying.value = true
-                startPositionTracker()
-                AudiobookService.start(context)
-            }
+            player.setDataSource(requireNotNull(appContext), book.uri)
+            player.prepareAsync()
+            // Start the service from the book tap, never from the prepared callback.
+            AudiobookService.start(requireNotNull(appContext))
         } catch (e: Exception) {
             Log.e(TAG, "Error playing audio file", e)
             _errorMessage.value = "Could not open audio file: ${e.localizedMessage ?: "Unknown error"}"
-            _isPlaying.value = false
             releasePlayer()
         }
     }
 
-    /**
-     * Toggles between play and pause.
-     */
     fun togglePlayPause(context: Context? = null) {
-        if (_isPlaying.value) {
-            pause(context)
-        } else {
-            resume(context)
-        }
+        if (_isPlaying.value || playWhenPrepared) pause() else resume(context)
     }
 
-    /**
-     * Resumes playback if a player is available.
-     */
     fun resume(context: Context? = null) {
-        val player = mediaPlayer
-        if (player != null && !_isPlaying.value) {
-            if (requestAudioFocus()) {
-                try {
-                    player.start()
-                    _isPlaying.value = true
-                    startPositionTracker()
-                    context?.let { AudiobookService.start(it) }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error resuming playback", e)
-                }
-            }
+        if (mediaPlayer == null || _isPlaying.value) return
+        playWhenPrepared = true
+        resumeOnFocusGain = false
+        if (context != null) appContext?.let { AudiobookService.start(it) }
+        if (prepared) {
+            if (requestAudioFocus()) startPlayback() else playWhenPrepared = false
         }
     }
 
-    /**
-     * Pauses playback and saves current position.
-     */
-    fun pause(context: Context? = null) {
-        val player = mediaPlayer
-        if (player != null && player.isPlaying) {
+    private fun startPlayback() {
+        val player = mediaPlayer ?: return
+        if (!prepared) return
+        try {
+            player.start()
+            applySpeed(player, _playbackSpeed.value)
+            _isPlaying.value = true
+            playWhenPrepared = true
+            registerNoisy()
+            startPositionTracker()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting playback", e)
+            pause()
+        }
+    }
+
+    fun pause(context: Context? = null) = pauseInternal(abandon = true)
+
+    private fun pauseInternal(abandon: Boolean) {
+        playWhenPrepared = false
+        if (prepared) {
             try {
-                player.pause()
-            } catch (e: Exception) {
-                Log.e(TAG, "Error pausing playback", e)
-            }
+                mediaPlayer?.let { if (it.isPlaying) it.pause() }
+            } catch (e: Exception) { Log.e(TAG, "Error pausing playback", e) }
         }
         _isPlaying.value = false
         saveCurrentPosition()
         stopPositionTracker()
-        context?.let { AudiobookService.updateNotification(it) }
+        unregisterNoisy()
+        if (abandon) abandonFocus()
     }
 
-    /**
-     * Seeks to an exact millisecond position.
-     */
     fun seekTo(positionMs: Long) {
-        val player = mediaPlayer ?: return
-        val maxDuration = _durationMs.value.coerceAtLeast(0L)
-        val clamped = positionMs.coerceIn(0L, maxDuration)
-        try {
-            player.seekTo(clamped.toInt())
-            _currentPositionMs.value = clamped
-            saveCurrentPosition()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error seeking to $positionMs", e)
+        val clamped = if (_durationMs.value > 0) positionMs.coerceIn(0, _durationMs.value)
+            else positionMs.coerceAtLeast(0)
+        pendingPosition = clamped
+        _currentPositionMs.value = clamped
+        if (prepared) {
+            try {
+                seekPending = true
+                mediaPlayer?.seekTo(clamped.toInt())
+            }
+            catch (e: Exception) { Log.e(TAG, "Error seeking", e) }
         }
+        // Persist the requested position, since MediaPlayer seeking is asynchronous.
+        persistPosition()
     }
 
-    /**
-     * Skips playback by delta milliseconds (+/- 15s, +/- 60s).
-     */
-    fun skip(deltaMs: Long) {
-        val newPos = _currentPositionMs.value + deltaMs
-        seekTo(newPos)
-    }
+    fun skip(deltaMs: Long) = seekTo(_currentPositionMs.value + deltaMs)
 
-    /**
-     * Sets playback speed (e.g. 0.75x, 1.0x, 1.25x, 1.5x).
-     */
     fun setPlaybackSpeed(speed: Float) {
+        if (!speed.isFinite() || speed <= 0f) return
         _playbackSpeed.value = speed
         prefsManager?.savePlaybackSpeed(speed)
-        mediaPlayer?.let { applySpeed(it, speed) }
+        if (_isPlaying.value) mediaPlayer?.let { applySpeed(it, speed) }
     }
 
     private fun applySpeed(player: MediaPlayer, speed: Float) {
-        try {
-            val params = player.playbackParams ?: PlaybackParams()
-            player.playbackParams = params.setSpeed(speed)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error setting playback speed $speed", e)
-        }
+        try { player.playbackParams = PlaybackParams().setSpeed(speed) }
+        catch (e: Exception) { Log.e(TAG, "Error setting playback speed", e) }
     }
 
-    /**
-     * Configures the sleep timer. Pauses audio once elapsed.
-     */
     fun setSleepTimer(option: SleepTimerOption, context: Context? = null) {
         _activeSleepOption.value = option
         sleepTimerJob?.cancel()
         sleepTimerJob = null
-
-        if (option == SleepTimerOption.OFF || option.minutes <= 0) {
-            _sleepTimerRemainingSeconds.value = null
-            return
-        }
-
-        var remainingSeconds = option.minutes * 60
-        _sleepTimerRemainingSeconds.value = remainingSeconds
-
+        _sleepTimerRemainingSeconds.value = null
+        if (option == SleepTimerOption.OFF || option.minutes <= 0) return
         sleepTimerJob = scope.launch {
-            while (isActive && remainingSeconds > 0) {
-                delay(1000L)
-                remainingSeconds--
-                _sleepTimerRemainingSeconds.value = remainingSeconds
+            var remaining = option.minutes * 60
+            _sleepTimerRemainingSeconds.value = remaining
+            while (isActive && remaining > 0) {
+                delay(1000)
+                _sleepTimerRemainingSeconds.value = --remaining
             }
-            if (isActive && remainingSeconds <= 0) {
-                // Time is up, gently pause the audiobook
-                pause(context)
+            if (isActive) {
+                pause()
                 _activeSleepOption.value = SleepTimerOption.OFF
                 _sleepTimerRemainingSeconds.value = null
             }
         }
     }
 
-    /**
-     * Saves the current position to SharedPreferences.
-     */
     fun saveCurrentPosition() {
+        if (prepared && !seekPending) {
+            try { mediaPlayer?.let { _currentPositionMs.value = it.currentPosition.toLong() } }
+            catch (e: Exception) { Log.w(TAG, "Could not read playback position", e) }
+        }
+        persistPosition()
+    }
+
+    private fun persistPosition() {
         val book = _currentBook.value ?: return
-        val pos = _currentPositionMs.value
-        prefsManager?.savePlaybackPosition(book.id, pos)
+        prefsManager?.savePlaybackPosition(book.id, _currentPositionMs.value)
+        saveThrottle.markSaved(SystemClock.elapsedRealtime())
     }
 
     private fun startPositionTracker() {
-        positionTrackerJob?.cancel()
+        stopPositionTracker()
         positionTrackerJob = scope.launch {
             while (isActive) {
-                mediaPlayer?.let { player ->
-                    if (player.isPlaying) {
-                        val current = player.currentPosition.toLong()
-                        _currentPositionMs.value = current
-                        // Auto-save position every 5 seconds while listening
-                        val book = _currentBook.value
-                        if (book != null && current > 0) {
-                            prefsManager?.savePlaybackPosition(book.id, current)
-                        }
-                    }
-                }
-                delay(500L)
+                try {
+                    mediaPlayer?.let { if (prepared && !seekPending && it.isPlaying) {
+                        _currentPositionMs.value = it.currentPosition.toLong()
+                        if (saveThrottle.shouldSave(SystemClock.elapsedRealtime())) persistPosition()
+                    } }
+                } catch (e: Exception) { Log.w(TAG, "Could not track playback position", e) }
+                delay(500)
             }
         }
     }
@@ -321,53 +318,55 @@ object AudiobookPlayerManager {
         positionTrackerJob = null
     }
 
+    private fun registerNoisy() {
+        val application = appContext ?: return
+        if (!noisyRegistered) {
+            ContextCompat.registerReceiver(application, noisyReceiver,
+                IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_NOT_EXPORTED)
+            noisyRegistered = true
+        }
+    }
+
+    private fun unregisterNoisy() {
+        if (noisyRegistered) {
+            appContext?.unregisterReceiver(noisyReceiver)
+            noisyRegistered = false
+        }
+    }
+
+    private fun requestAudioFocus(): Boolean = audioManager?.requestAudioFocus(audioFocusRequest) ==
+        AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+
+    private fun abandonFocus() {
+        resumeOnFocusGain = false
+        audioManager?.abandonAudioFocusRequest(audioFocusRequest)
+    }
+
     private fun releasePlayer() {
         stopPositionTracker()
-        try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-        } catch (e: Exception) {
-            // Ignore release exceptions
-        }
+        unregisterNoisy()
+        abandonFocus()
+        val old = mediaPlayer
         mediaPlayer = null
+        prepared = false
+        seekPending = false
+        playWhenPrepared = false
+        _isPlaying.value = false
+        try { old?.release() } catch (e: Exception) { Log.w(TAG, "Could not release player", e) }
     }
 
-    private fun requestAudioFocus(): Boolean {
-        val manager = audioManager ?: return true
-        val focusListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-            when (focusChange) {
-                AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                    pause()
-                }
-                AudioManager.AUDIOFOCUS_GAIN -> {
-                    // Stay paused or let user resume
-                }
-            }
-        }
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
-                .setOnAudioFocusChangeListener(focusListener)
-                .build()
-            audioFocusRequest = request
-            manager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        } else {
-            @Suppress("DEPRECATION")
-            manager.requestAudioFocus(
-                focusListener,
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN
-            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        }
+    fun stop() {
+        pause()
+        releasePlayer()
     }
 
-    fun clearErrorMessage() {
-        _errorMessage.value = null
+    fun release() {
+        stop()
+        sleepTimerJob?.cancel()
+        sleepTimerJob = null
+        _activeSleepOption.value = SleepTimerOption.OFF
+        _sleepTimerRemainingSeconds.value = null
     }
+
+    fun clearErrorMessage() { _errorMessage.value = null }
 }
