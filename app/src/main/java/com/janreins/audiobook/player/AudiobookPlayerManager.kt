@@ -248,8 +248,10 @@ object AudiobookPlayerManager {
             // Restart from the first track only when playback actually reached the end; a book that was
             // finished and then sought back continues from where it is.
             val atEnd = if (sameBook) {
-                CompletionRules.isAtEnd(player.currentMediaItemIndex, tracks.size, player.currentPosition,
-                    trackDuration(book, player.currentMediaItemIndex, player), finishedFlag)
+                // Loaded book: STATE_ENDED (checked below) is the real signal. Position only counts when it
+                // was explicitly marked finished, so pausing a second before the end still continues.
+                finishedFlag && CompletionRules.isAtEnd(player.currentMediaItemIndex, tracks.size,
+                    player.currentPosition, trackDuration(book, player.currentMediaItemIndex, player), true)
             } else {
                 CompletionRules.isAtEnd(saved.trackIndex, tracks.size, saved.positionMs,
                     trackDuration(book, saved.trackIndex, null), finishedFlag)
