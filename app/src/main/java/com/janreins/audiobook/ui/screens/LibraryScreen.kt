@@ -3,6 +3,8 @@ package com.janreins.audiobook.ui.screens
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,10 +33,14 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,6 +66,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.janreins.audiobook.data.model.Audiobook
+import com.janreins.audiobook.data.BookStatus
+import com.janreins.audiobook.data.LibrarySort
+import com.janreins.audiobook.data.LibraryFilter
+import com.janreins.audiobook.data.LibrarySorting
 import com.janreins.audiobook.ui.components.AudiobookListItem
 import com.janreins.audiobook.ui.components.ThemeSelectionDialog
 import com.janreins.audiobook.ui.theme.AppThemeMode
@@ -74,18 +84,31 @@ fun LibraryScreen(
     isLoading: Boolean,
     currentPlayingBook: Audiobook?,
     isPlaying: Boolean,
-    currentThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
-    onSelectThemeMode: (AppThemeMode) -> Unit = {},
     getSavedPosition: (String) -> Long,
     onBookClick: (Audiobook) -> Unit,
     onMiniPlayerClick: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onChangeFolderClick: () -> Unit,
     onRefresh: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentThemeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    onSelectThemeMode: (AppThemeMode) -> Unit = {},
+    libraryVersion: Long = 0L,
+    sort: LibrarySort = LibrarySort.TITLE,
+    filter: LibraryFilter = LibraryFilter.ALL,
+    statusOf: (Audiobook) -> BookStatus = { book ->
+        BookStatus(if (book.durationMs > 0) {
+            (getSavedPosition(book.id).toFloat() / book.durationMs).coerceIn(0f, 1f)
+        } else 0f, false, null)
+    },
+    onSortChange: (LibrarySort) -> Unit = {},
+    onFilterChange: (LibraryFilter) -> Unit = {},
+    onMarkFinished: (Audiobook) -> Unit = {},
+    onMarkUnplayed: (Audiobook) -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
 
     if (showThemeDialog) {
         ThemeSelectionDialog(
@@ -95,15 +118,8 @@ fun LibraryScreen(
         )
     }
 
-    val filteredAudiobooks = remember(audiobooks, searchQuery) {
-        if (searchQuery.isBlank()) {
-            audiobooks
-        } else {
-            audiobooks.filter {
-                it.title.contains(searchQuery, ignoreCase = true) ||
-                it.fileName.contains(searchQuery, ignoreCase = true)
-            }
-        }
+    val filteredAudiobooks = remember(audiobooks, searchQuery, sort, filter, libraryVersion, statusOf) {
+        LibrarySorting.apply(audiobooks, statusOf, sort, filter, searchQuery)
     }
 
     Scaffold(
@@ -130,6 +146,19 @@ fun LibraryScreen(
                     }
                 },
                 actions = {
+                    Box {
+                        IconButton(onClick = { showSortMenu = true }) {
+                            Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort library: ${sort.label()}")
+                        }
+                        DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
+                            LibrarySort.entries.forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text(option.label()) },
+                                    onClick = { showSortMenu = false; onSortChange(option) }
+                                )
+                            }
+                        }
+                    }
                     IconButton(
                         onClick = { showThemeDialog = true },
                         modifier = Modifier.testTag("theme_button_library")
@@ -302,6 +331,29 @@ fun LibraryScreen(
                             )
                         }
 
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            LibraryFilter.entries.forEach { option ->
+                                FilterChip(
+                                    selected = filter == option,
+                                    onClick = { onFilterChange(option) },
+                                    label = { Text(option.label()) }
+                                )
+                            }
+                        }
+                        if (filteredAudiobooks.isEmpty()) {
+                            Text(
+                                "No audiobooks match your search or filter.",
+                                modifier = Modifier.padding(16.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
                         // Audiobooks List
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
@@ -321,7 +373,10 @@ fun LibraryScreen(
                                     audiobook = book,
                                     savedPositionMs = savedPos,
                                     isCurrentlyPlaying = isSelected && isPlaying,
-                                    onClick = { onBookClick(book) }
+                                    onClick = { onBookClick(book) },
+                                    finished = statusOf(book).finished,
+                                    onMarkFinished = { onMarkFinished(book) },
+                                    onMarkUnplayed = { onMarkUnplayed(book) }
                                 )
                             }
                         }
@@ -414,4 +469,18 @@ fun MiniPlayerBar(
             }
         }
     }
+}
+
+private fun LibrarySort.label(): String = when (this) {
+    LibrarySort.TITLE -> "Title"
+    LibrarySort.RECENT -> "Recently played"
+    LibrarySort.PROGRESS -> "Progress"
+    LibrarySort.DURATION -> "Duration"
+}
+
+private fun LibraryFilter.label(): String = when (this) {
+    LibraryFilter.ALL -> "All"
+    LibraryFilter.IN_PROGRESS -> "In progress"
+    LibraryFilter.NOT_STARTED -> "Not started"
+    LibraryFilter.FINISHED -> "Finished"
 }

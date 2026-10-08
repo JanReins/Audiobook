@@ -61,6 +61,9 @@ fun AudiobookApp(
 
     val currentScreen by viewModel.currentScreen.collectAsState()
     val audiobooks by viewModel.audiobooks.collectAsState()
+    val libraryVersion by viewModel.libraryVersion.collectAsState()
+    val librarySort by viewModel.librarySort.collectAsState()
+    val libraryFilter by viewModel.libraryFilter.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val currentPlayingBook by viewModel.currentPlayingBook.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
@@ -129,6 +132,14 @@ fun AudiobookApp(
             AppScreen.LIBRARY -> {
                 LibraryScreen(
                     audiobooks = audiobooks,
+                    libraryVersion = libraryVersion,
+                    sort = librarySort,
+                    filter = libraryFilter,
+                    statusOf = viewModel::getBookStatus,
+                    onSortChange = viewModel::setLibrarySort,
+                    onFilterChange = viewModel::setLibraryFilter,
+                    onMarkFinished = viewModel::markFinished,
+                    onMarkUnplayed = viewModel::markUnplayed,
                     isLoading = isLoading,
                     currentPlayingBook = currentPlayingBook,
                     isPlaying = isPlaying,

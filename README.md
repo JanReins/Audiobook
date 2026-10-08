@@ -21,7 +21,8 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
 2. **Clean Book Library**
    - Automatically formats file names into clean, readable book titles.
    - Displays duration and listening progress percentage on every book. Durations are cached for faster library loading.
-   - Instant search and filtering bar to quickly locate books across directories.
+   - Search by title or filename, filter by listening status, and sort by title, recently played, progress, or duration. Sort and filter choices are remembered.
+   - Finished labels and time remaining make progress easy to see. Each book's options menu can mark it finished or unplayed without changing bookmarks.
 
 3. **Dedicated Player Screen**
    - **Prominent Center Play / Pause** button.
@@ -45,6 +46,8 @@ A signed release build needs signing secrets (`KEYSTORE_PATH`, `STORE_PASSWORD`,
 5. **Progress Memory**
    - Automatically remembers the track and position for every book, even when choosing a different parent folder containing the same book sub-folders.
    - Seamlessly resumes right where you left off when you open a book again.
+   - Completed books keep 100% progress. Pressing play at the end (in the app, notification or headset) restarts the whole book; seeking back after finishing clears Finished and continues from there.
+   - Marking the loaded book finished or unplayed pauses it and moves the player to the end or the start.
    - Stored 100% privately on your device using Android SharedPreferences.
 
 6. **Background Playback & Media3 Media Controls**
