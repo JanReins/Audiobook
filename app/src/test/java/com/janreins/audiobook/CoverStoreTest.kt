@@ -9,6 +9,7 @@ import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import com.janreins.audiobook.data.CoverModel
 import com.janreins.audiobook.data.CoverStore
+import com.janreins.audiobook.data.CoverThumbnail
 import com.janreins.audiobook.data.DurationCache
 import com.janreins.audiobook.data.coverModel
 import com.janreins.audiobook.data.model.AudioTrack
@@ -189,9 +190,32 @@ class CoverStoreTest {
         assertEquals(1, cache.listFiles().orEmpty().count { it.extension == "none" })
     }
 
-    @Test fun failedEmbeddedReadStillUsesFolderCover() = runBlocking {
-        val store = CoverStore(context) { throw java.io.IOException("unsupported") }
-        assertColor(requireNotNull(store.thumbnailFile(folderModel())), 0, 255)
+    @Test fun failedEmbeddedReadUsesFolderCoverInMemoryWithoutCachingIt() = runBlocking {
+        var calls = 0
+        val store = CoverStore(context) { calls++; throw java.io.IOException("unsupported") }
+        val source = folderModel()
+        val thumbnail = store.thumbnail(source) as CoverThumbnail.InMemory
+        val bitmap = requireNotNull(BitmapFactory.decodeByteArray(thumbnail.jpeg, 0, thumbnail.jpeg.size))
+        assertEquals(255.0, Color.blue(bitmap.getPixel(0, 0)).toDouble(), 10.0)
+        assertNull(store.thumbnailFile(source))
+        assertTrue(cache.listFiles().orEmpty().none { it.extension == "jpg" || it.extension == "none" })
+        assertEquals(1, calls)
+        // Next launch: the embedded read succeeds and that art is cached.
+        val file = requireNotNull(CoverStore(context) { image(Color.RED) }.thumbnailFile(source))
+        assertColor(file, 255, 0)
+    }
+
+    @Test fun hitsOlderThanFiveMinutesAreRefreshedButRecentOnesAreNot() = runBlocking {
+        val store = CoverStore(context) { image(Color.RED) }
+        val file = requireNotNull(store.thumbnailFile(model))
+        val twoMinutesAgo = System.currentTimeMillis() - 2 * 60_000L
+        assertTrue(file.setLastModified(twoMinutesAgo))
+        store.thumbnailFile(model)
+        assertEquals(twoMinutesAgo / 1000, file.lastModified() / 1000)
+        val sixMinutesAgo = System.currentTimeMillis() - 6 * 60_000L
+        assertTrue(file.setLastModified(sixMinutesAgo))
+        store.thumbnailFile(model)
+        assertTrue(file.lastModified() > sixMinutesAgo + 60_000L)
     }
 
     @Test fun modelUsesFirstTrackSizeAndTimestampWithLegacyFallback() {

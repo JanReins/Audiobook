@@ -91,4 +91,37 @@ class CoverBitmapLoaderTest {
             .setArtworkData(broken, null).build())!!.get(5, TimeUnit.SECONDS)
         assertEquals(512, placeholder.width)
     }
+
+    private fun <T> java.util.concurrent.Future<T>.awaitIdle(): T {
+        repeat(500) {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            if (isDone) return get()
+            Thread.sleep(10)
+        }
+        return get(5, TimeUnit.SECONDS)
+    }
+
+    @Test fun throughMediaSessionFolderOnlyThenEmbeddedReturnsEmbedded() {
+        // MediaSession.build() wraps the loader in CacheBitmapLoader; this is what the notification uses.
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val player = androidx.media3.exoplayer.ExoPlayer.Builder(context).build()
+        val session = androidx.media3.session.MediaSession.Builder(context, player).setBitmapLoader(loader).build()
+        try {
+            val sessionLoader = session.bitmapLoader
+            val folder = android.net.Uri.fromFile(temporaryFolder.newFile("session.jpg").apply { writeBytes(jpeg(Color.BLUE, 64, 64)) })
+            val extras = Bundle().apply {
+                putString(CoverBitmapLoader.EXTRA_BOOK_ID, "folder:book")
+                putString(CoverBitmapLoader.EXTRA_FOLDER_COVER_URI, folder.toString())
+            }
+            val folderOnly = MediaMetadata.Builder().setAlbumTitle("Book").setExtras(extras).build()
+            val first = sessionLoader.loadBitmapFromMetadata(folderOnly)!!.awaitIdle().getPixel(32, 32)
+            assertTrue("folder cover first", Color.blue(first) > 200)
+            val withEmbedded = folderOnly.buildUpon().setArtworkData(jpeg(Color.RED, 64, 64), null).build()
+            val second = sessionLoader.loadBitmapFromMetadata(withEmbedded)!!.awaitIdle().getPixel(32, 32)
+            assertTrue("embedded art must win", Color.red(second) > 200 && Color.blue(second) < 60)
+        } finally {
+            session.release()
+            player.release()
+        }
+    }
 }

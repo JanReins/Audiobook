@@ -34,12 +34,14 @@ class CoverBitmapLoader(context: Context) : BitmapLoader {
     /**
      * The notification asks again on every player change, so the last result is reused. The key follows
      * every input (embedded bytes, folder URI, placeholder id), and embedded bytes win over the folder URI,
-     * so when embedded art arrives after a URI-only request it replaces the folder cover. (Media3's
-     * CacheBitmapLoader would reuse the folder bitmap there because the URI still matches.)
+     * so when embedded art arrives after a folder-only request it replaces the folder cover. MediaSession
+     * always wraps this loader in CacheBitmapLoader, which matches on artworkUri *or* artworkData; the folder
+     * URI therefore travels in [EXTRA_FOLDER_COVER_URI], which that wrapper never compares.
      */
     override fun loadBitmapFromMetadata(metadata: MediaMetadata): ListenableFuture<Bitmap> {
         val data = metadata.artworkData
-        val uri = metadata.artworkUri
+        // Folder cover from extras (see playBook); artworkUri only as a fallback for other callers.
+        val uri = metadata.extras?.getString(EXTRA_FOLDER_COVER_URI)?.let(Uri::parse) ?: metadata.artworkUri
         val title = (metadata.albumTitle ?: metadata.title ?: "?").toString()
         // Same colour as the in-app placeholder, which is keyed by book id.
         val bookId = metadata.extras?.getString(EXTRA_BOOK_ID) ?: title
@@ -62,6 +64,8 @@ class CoverBitmapLoader(context: Context) : BitmapLoader {
     companion object {
         /** MediaMetadata extra carrying the book id, so the placeholder colour matches the app. */
         const val EXTRA_BOOK_ID = "com.janreins.audiobook.BOOK_ID"
+        /** MediaMetadata extra carrying the folder cover URI (instead of artworkUri, see playBook). */
+        const val EXTRA_FOLDER_COVER_URI = "com.janreins.audiobook.FOLDER_COVER_URI"
         private const val MAX_PX = 512
     }
 

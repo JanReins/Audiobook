@@ -24,6 +24,13 @@ data class CoverModel(
     val folderCoverKey: String?
 )
 
+sealed interface CoverThumbnail {
+    /** Persisted thumbnail in the cover cache. */
+    data class Cached(val file: File) : CoverThumbnail
+    /** Shown for this process only (folder cover while the embedded read is failing). */
+    class InMemory(val jpeg: ByteArray) : CoverThumbnail
+}
+
 fun Audiobook.coverModel(): CoverModel {
     val first = tracks.firstOrNull()
     return CoverModel(id, title, first?.uri ?: uri,
@@ -41,14 +48,24 @@ class CoverStore(
 ) {
     private val context = context.applicationContext
     private val cacheDirectory = File(context.cacheDir, "covers")
-    /** Keys whose embedded read failed in this process: retried on the next launch, not on every scroll. */
-    private val failedEmbeddedReads = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    /**
+     * Keys whose embedded read failed in this process, with the folder thumbnail (JPEG) used meanwhile.
+     * Nothing about them is persisted, so the next launch reads the audio file again; within this process
+     * they are not re-read on every scroll.
+     */
+    private val failedEmbeddedReads = object : LinkedHashMap<String, ByteArray?>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray?>) = size > 64
+    }
 
-    suspend fun thumbnailFile(model: CoverModel): File? = withContext(Dispatchers.IO) {
+    /** Cached thumbnails only; see [thumbnail] for the in-memory fallback. */
+    suspend fun thumbnailFile(model: CoverModel): File? = (thumbnail(model) as? CoverThumbnail.Cached)?.file
+
+    suspend fun thumbnail(model: CoverModel): CoverThumbnail? = withContext(Dispatchers.IO) {
         // Fast path without the lock: cache hits and remembered "no art" never wait behind an extraction.
         val key = hashOf(cacheKey(model))
-        File(cacheDirectory, "$key.jpg").takeIf { it.isFile }?.let { return@withContext touched(it) }
+        File(cacheDirectory, "$key.jpg").takeIf { it.isFile }?.let { return@withContext CoverThumbnail.Cached(touched(it)) }
         if (File(cacheDirectory, "$key.none").isFile) return@withContext null
+        synchronized(failedEmbeddedReads) { failedEmbeddedReads[key] }?.let { return@withContext CoverThumbnail.InMemory(it) }
         // Serialize cache writes and pruning, including simultaneous requests for the same book.
         cacheMutex.withLock {
             var temp: File? = null
@@ -58,17 +75,17 @@ class CoverStore(
                 val hash = key
                 val image = File(cacheDirectory, "$hash.jpg")
                 val none = File(cacheDirectory, "$hash.none")
-                if (image.isFile) return@withLock touched(image)
+                if (image.isFile) return@withLock CoverThumbnail.Cached(touched(image))
                 if (none.isFile) return@withLock null
 
-                var embeddedReadFailed = hash in failedEmbeddedReads
+                var embeddedReadFailed = synchronized(failedEmbeddedReads) { hash in failedEmbeddedReads }
                 if (!embeddedReadFailed) {
                     val embedded = try {
                         embeddedArtReader(model.firstTrackUri)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
-                        failedEmbeddedReads += hash
+                        synchronized(failedEmbeddedReads) { failedEmbeddedReads[hash] = null }
                         embeddedReadFailed = true
                         null
                     }
@@ -87,12 +104,20 @@ class CoverStore(
                     return@withLock null
                 }
                 val resolved = bitmap
+                if (embeddedReadFailed) {
+                    // The embedded art may still exist: show the folder cover now, but don't cache it.
+                    val jpeg = java.io.ByteArrayOutputStream().use {
+                        check(resolved.compress(Bitmap.CompressFormat.JPEG, 85, it)); it.toByteArray()
+                    }
+                    synchronized(failedEmbeddedReads) { failedEmbeddedReads[hash] = jpeg }
+                    return@withLock CoverThumbnail.InMemory(jpeg)
+                }
                 val temporary = File.createTempFile(hash, ".tmp", cacheDirectory)
                 temp = temporary
                 temporary.outputStream().use { check(resolved.compress(Bitmap.CompressFormat.JPEG, 85, it)) }
                 check(temporary.renameTo(image))
                 trimCache()
-                image
+                CoverThumbnail.Cached(image)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -107,7 +132,10 @@ class CoverStore(
     fun decodeDownsampled(bytes: ByteArray, maxPx: Int): Bitmap? = BitmapDecoding.decodeDownsampled(bytes, maxPx)
     fun decodeDownsampled(uri: Uri, maxPx: Int): Bitmap? = BitmapDecoding.decodeDownsampled(context, uri, maxPx)
 
-    /** Cache hits refresh the timestamp (at most hourly), so trimming drops the least recently used. */
+    /**
+     * Cache hits refresh the timestamp (when older than 5 minutes, inside the 10-minute protection window),
+     * so trimming drops the least recently used.
+     */
     private fun touched(file: File): File {
         val now = System.currentTimeMillis()
         if (now - file.lastModified() > TOUCH_INTERVAL_MS) file.setLastModified(now)
@@ -137,7 +165,7 @@ class CoverStore(
         internal const val MAX_MARKERS = 2000
         internal const val TRIM_MARKERS_TO = 1500
         private const val KEEP_RECENT_MS = 10 * 60_000L
-        private const val TOUCH_INTERVAL_MS = 60 * 60_000L
+        private const val TOUCH_INTERVAL_MS = 5 * 60_000L
         fun cacheKey(model: CoverModel): String = "v1|${model.firstTrackKey}|${model.folderCoverKey ?: "-"}"
 
         private fun hashOf(key: String): String = MessageDigest.getInstance("SHA-1")

@@ -31,6 +31,8 @@ import coil3.request.Options
 import com.janreins.audiobook.data.CoverModel
 import com.janreins.audiobook.data.CoverPlaceholders
 import com.janreins.audiobook.data.CoverStore
+import com.janreins.audiobook.data.CoverThumbnail
+import okio.Buffer
 import com.janreins.audiobook.data.coverModel
 import com.janreins.audiobook.data.model.Audiobook
 import okio.FileSystem
@@ -43,12 +45,18 @@ class CoverKeyer : Keyer<CoverModel> {
 
 class CoverFetcher(private val model: CoverModel, private val store: CoverStore) : Fetcher {
     override suspend fun fetch(): SourceFetchResult {
-        val file = store.thumbnailFile(model) ?: throw IOException("No cover art")
-        return SourceFetchResult(
-            source = ImageSource(file = file.toOkioPath(), fileSystem = FileSystem.SYSTEM),
-            mimeType = "image/jpeg",
-            dataSource = DataSource.DISK
-        )
+        return when (val thumbnail = store.thumbnail(model) ?: throw IOException("No cover art")) {
+            is CoverThumbnail.Cached -> SourceFetchResult(
+                source = ImageSource(file = thumbnail.file.toOkioPath(), fileSystem = FileSystem.SYSTEM),
+                mimeType = "image/jpeg",
+                dataSource = DataSource.DISK
+            )
+            is CoverThumbnail.InMemory -> SourceFetchResult(
+                source = ImageSource(source = Buffer().write(thumbnail.jpeg), fileSystem = FileSystem.SYSTEM),
+                mimeType = "image/jpeg",
+                dataSource = DataSource.MEMORY
+            )
+        }
     }
 
     class Factory(private val store: CoverStore) : Fetcher.Factory<CoverModel> {

@@ -100,8 +100,8 @@ class PlaybackService : MediaSessionService() {
         )
         val coverLoader = CoverBitmapLoader(this).also { coverBitmapLoader = it }
         session = MediaSession.Builder(this, sessionPlayer)
-            // No CacheBitmapLoader: it matches on URI *or* data, so it would keep showing the folder
-            // cover after embedded art arrives. CoverBitmapLoader keeps its own one-entry cache.
+            // MediaSession wraps this in CacheBitmapLoader; the folder cover travels in extras so that
+            // cache never matches it against later embedded art (see playBook).
             .setBitmapLoader(coverLoader)
             .setSessionActivity(activity)
             .setCallback(object : MediaSession.Callback {
